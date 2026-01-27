@@ -1,0 +1,29 @@
+# FastAPI - Modern web framework for building APIs
+fastapi==0.109.0
+
+# Uvicorn - ASGI server to run FastAPI
+uvicorn[standard]==0.27.0
+
+# SQLAlchemy - Database ORM
+sqlalchemy==2.0.25
+
+# PostgreSQL driver
+psycopg2-binary==2.9.9
+
+# Aiogram - Telegram Bot framework (for future bot integration)
+aiogram==3.3.0
+
+# Python-dotenv - Load environment variables from .env file
+python-dotenv==1.0.0
+
+# Pydantic - Data validation (comes with FastAPI but explicitly listed)
+pydantic==2.5.3
+
+# Requests - HTTP library for API calls
+requests==2.31.0
+
+# Python-telegram-bot - Alternative Telegram library (optional)
+python-telegram-bot==20.7
+
+# APScheduler - For scheduled tasks (checking deal timeouts, etc.)
+apscheduler==3.10.4
