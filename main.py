@@ -54,8 +54,9 @@ async def health_check(db: Session = Depends(get_db)):
     Detailed health check - tests database connection
     """
     try:
-        # Try to query the database
-        db.execute("SELECT 1")
+        # Try to query the database (SQLAlchemy 2.0 syntax)
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
