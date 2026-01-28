@@ -16,8 +16,11 @@ DATABASE_URL = os.getenv(
 )
 
 # Fix for Render's postgres:// vs postgresql:// URL format
+# Also convert to asyncpg driver which works with Python 3.13
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # Create database engine
 # pool_pre_ping=True ensures connections are valid before using them
