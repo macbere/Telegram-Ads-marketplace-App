@@ -16,8 +16,11 @@ DATABASE_URL = os.getenv(
 )
 
 # Fix for Render's postgres:// vs postgresql:// URL format
+# IMPORTANT: Also add +psycopg to use psycopg3 driver instead of psycopg2
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 # Create database engine using psycopg (version 3)
 # pool_pre_ping=True ensures connections are valid before using them
