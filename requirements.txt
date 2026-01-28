@@ -1,29 +1,29 @@
-# FastAPI - Modern web framework for building APIs
-fastapi==0.109.0
+# FastAPI - Updated for better compatibility with Pydantic V2
+fastapi==0.115.6
 
-# Uvicorn - ASGI server to run FastAPI
-uvicorn[standard]==0.27.0
+# Uvicorn - ASGI server
+uvicorn[standard]==0.34.0
 
 # SQLAlchemy - Database ORM
-sqlalchemy==2.0.25
+sqlalchemy==2.0.36
 
 # PostgreSQL driver
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 
-# Aiogram - Telegram Bot framework (for future bot integration)
-aiogram==3.3.0
+# Aiogram - Telegram Bot framework
+aiogram==3.15.0
 
-# Python-dotenv - Load environment variables from .env file
-python-dotenv==1.0.0
+# Python-dotenv - Load environment variables
+python-dotenv==1.0.1
 
-# Pydantic - Data validation (comes with FastAPI but explicitly listed)
-pydantic==2.5.3
+# Pydantic - Updated to fix the build/compilation error
+pydantic==2.10.4
 
-# Requests - HTTP library for API calls
-requests==2.31.0
+# Requests - HTTP library
+requests==2.32.3
 
-# Python-telegram-bot - Alternative Telegram library (optional)
-python-telegram-bot==20.7
+# Python-telegram-bot - Alternative Telegram library
+python-telegram-bot==21.9
 
-# APScheduler - For scheduled tasks (checking deal timeouts, etc.)
-apscheduler==3.10.4
+# APScheduler - For scheduled tasks
+apscheduler==3.11.0
