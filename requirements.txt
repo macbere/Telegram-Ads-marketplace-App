@@ -1,29 +1,10 @@
-# FastAPI - Updated for better compatibility with Pydantic V2
-fastapi==0.115.6
-
-# Uvicorn - ASGI server
-uvicorn[standard]==0.34.0
-
-# SQLAlchemy - Database ORM
-sqlalchemy==2.0.36
-
-# PostgreSQL driver
-psycopg2-binary==2.9.10
-
-# Aiogram - Telegram Bot framework
-aiogram==3.15.0
-
-# Python-dotenv - Load environment variables
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+aiogram==3.13.1
 python-dotenv==1.0.1
-
-# Pydantic - Updated to fix the build/compilation error
-pydantic==2.10.4
-
-# Requests - HTTP library
+pydantic==2.9.0
 requests==2.32.3
-
-# Python-telegram-bot - Alternative Telegram library
-python-telegram-bot==21.9
-
-# APScheduler - For scheduled tasks
-apscheduler==3.11.0
+python-telegram-bot==21.7
+apscheduler==3.10.4
