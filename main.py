@@ -3,7 +3,7 @@ main.py - FastAPI server for Telegram Ads Marketplace
 NOW WITH CHANNEL CREATION ENDPOINT!
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -33,6 +33,7 @@ app.add_middleware(
 # Create tables on startup
 @app.on_event("startup")
 async def startup():
+    """Create database tables on startup"""
     Base.metadata.create_all(bind=engine)
     print("✅ Database tables created/verified")
 
