@@ -15,6 +15,12 @@ echo "  - API_URL: $API_URL"
 echo "  - DATABASE_URL: ${DATABASE_URL:0:30}..."
 echo ""
 
+# Kill any existing bot processes
+echo "🧹 Cleaning up old processes..."
+pkill -f "python bot.py" || true
+pkill -f "python main.py" || true
+sleep 2
+
 # Start FastAPI in background
 echo "🌐 Starting FastAPI server on port $PORT..."
 uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info &
