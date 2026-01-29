@@ -1,17 +1,15 @@
 """
-bot.py - Telegram Bot for Ads Marketplace
-This bot handles interactions with channel owners and advertisers
+bot.py - Telegram Bot for Ads Marketplace (Webhook Mode)
+This bot handles interactions using webhooks instead of polling
 """
 
-import asyncio
 import logging
 import os
-import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramUnauthorizedError, TelegramNetworkError
 from bot_handlers import setup_handlers
+from fastapi import Request
 
 # Configure logging
 logging.basicConfig(
@@ -22,95 +20,78 @@ logger = logging.getLogger(__name__)
 
 # Get bot token from environment
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip()
 
-if not BOT_TOKEN or BOT_TOKEN == "placeholder-token":
-    logger.error("❌ BOT_TOKEN not found or is placeholder!")
-    logger.info("⚠️  Bot will not start, but API server should still work")
-    sys.exit(1)
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN not found!")
+    raise ValueError("BOT_TOKEN is required")
 
 logger.info(f"✅ Bot token loaded: {BOT_TOKEN[:15]}...{BOT_TOKEN[-8:]}")
 
+# Initialize bot and dispatcher (singleton pattern)
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
+dp = Dispatcher()
 
-async def verify_bot_token(bot: Bot, max_retries=3):
+# Setup handlers once
+setup_handlers(dp)
+logger.info("✅ Bot handlers registered")
+
+
+async def setup_webhook():
     """
-    Verify bot token with retries
+    Setup webhook for the bot
     """
-    for attempt in range(1, max_retries + 1):
-        try:
-            logger.info(f"🔍 Verifying bot token (attempt {attempt}/{max_retries})...")
-            bot_info = await bot.get_me()
-            logger.info(f"✅ Bot verified: @{bot_info.username} ({bot_info.first_name})")
-            return True
-        except TelegramUnauthorizedError as e:
-            logger.error(f"❌ Unauthorized error: {e}")
-            logger.error("The BOT_TOKEN is invalid or has been revoked!")
-            return False
-        except TelegramNetworkError as e:
-            logger.warning(f"⚠️  Network error on attempt {attempt}: {e}")
-            if attempt < max_retries:
-                wait_time = attempt * 2
-                logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
-                await asyncio.sleep(wait_time)
-            else:
-                logger.error("❌ Max retries reached. Network issues persist.")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Unexpected error verifying token: {e}")
-            return False
+    if not WEBHOOK_URL:
+        logger.warning("⚠️  WEBHOOK_URL not set - bot will not receive updates")
+        return False
     
-    return False
+    try:
+        webhook_info = await bot.get_webhook_info()
+        
+        if webhook_info.url != WEBHOOK_URL:
+            logger.info(f"🔧 Setting webhook to: {WEBHOOK_URL}")
+            await bot.set_webhook(
+                url=WEBHOOK_URL,
+                drop_pending_updates=True  # Clear any pending updates
+            )
+            logger.info("✅ Webhook set successfully")
+        else:
+            logger.info(f"✅ Webhook already configured: {WEBHOOK_URL}")
+        
+        # Verify bot
+        bot_info = await bot.get_me()
+        logger.info(f"✅ Bot verified: @{bot_info.username} ({bot_info.first_name})")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to setup webhook: {e}")
+        return False
 
 
-async def main():
+async def process_update(request: Request):
     """
-    Main function to start the bot
+    Process incoming webhook update from Telegram
     """
-    logger.info("🚀 Starting Telegram Ads Marketplace Bot...")
-    
-    # Initialize bot
     try:
-        bot = Bot(
-            token=BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-        )
-        dp = Dispatcher()
-        logger.info("✅ Bot and Dispatcher initialized")
+        update_data = await request.json()
+        from aiogram.types import Update
+        update = Update(**update_data)
+        await dp.feed_update(bot, update)
+        return {"ok": True}
     except Exception as e:
-        logger.error(f"❌ Failed to initialize bot: {e}")
-        sys.exit(1)
-    
-    # Verify bot token with retries
-    if not await verify_bot_token(bot):
-        logger.error("❌ Bot verification failed. Exiting.")
-        await bot.session.close()
-        sys.exit(1)
-    
-    # Setup all command and message handlers
-    try:
-        setup_handlers(dp)
-        logger.info("✅ Command handlers registered")
-    except Exception as e:
-        logger.error(f"❌ Failed to setup handlers: {e}")
-        await bot.session.close()
-        sys.exit(1)
-    
-    # Start polling for updates
-    try:
-        logger.info("🎧 Starting polling for updates...")
-        logger.info("✅ Bot is now running and ready to receive messages!")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    except KeyboardInterrupt:
-        logger.info("⏹️  Bot stopped by user")
-    except Exception as e:
-        logger.error(f"❌ Polling error: {e}")
-    finally:
-        await bot.session.close()
-        logger.info("👋 Bot session closed")
+        logger.error(f"❌ Error processing update: {e}")
+        return {"ok": False, "error": str(e)}
 
 
-if __name__ == "__main__":
+async def remove_webhook():
+    """
+    Remove webhook (cleanup)
+    """
     try:
-        asyncio.run(main())
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("🗑️  Webhook removed")
     except Exception as e:
-        logger.error(f"💥 Fatal error: {e}")
-        sys.exit(1)
+        logger.error(f"❌ Error removing webhook: {e}")
