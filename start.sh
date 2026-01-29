@@ -34,7 +34,8 @@ else
     exit 1
 fi
 
-# Start Telegram bot (in FOREGROUND this time, not background)
+# Start Telegram bot (in FOREGROUND - this is the main process)
 echo ""
-echo "🤖 Starting Telegram bot (foreground process)..."
+echo "🤖 Starting Telegram bot..."
+echo "=========================================="
 python bot.py
