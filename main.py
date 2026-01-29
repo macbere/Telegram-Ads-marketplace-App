@@ -1,6 +1,6 @@
 """
-main.py - FastAPI server for Telegram Ads Marketplace
-NOW WITH CHANNEL CREATION ENDPOINT!
+main.py - Combined FastAPI + Telegram Bot
+Running in SINGLE PROCESS to prevent conflicts
 """
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -12,13 +12,107 @@ from models import User, Channel, Deal, Post, ChannelStats
 from pydantic import BaseModel
 from typing import Optional, Dict
 import os
+import asyncio
+import logging
 from datetime import datetime
+from contextlib import asynccontextmanager
+
+# Bot imports
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from bot_handlers import setup_handlers
+
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Bot token
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+
+# Global bot instance
+bot_instance = None
+dp = None
+polling_task = None
+
+
+async def start_bot():
+    """Start the Telegram bot in background"""
+    global bot_instance, dp, polling_task
+    
+    try:
+        logger.info("🤖 Starting Telegram bot...")
+        
+        # Delete webhook if exists
+        temp_bot = Bot(token=BOT_TOKEN)
+        webhook_info = await temp_bot.get_webhook_info()
+        if webhook_info.url:
+            logger.info(f"🧹 Deleting webhook: {webhook_info.url}")
+            await temp_bot.delete_webhook(drop_pending_updates=True)
+            await asyncio.sleep(2)
+        await temp_bot.session.close()
+        
+        # Create bot and dispatcher
+        bot_instance = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        dp = Dispatcher()
+        setup_handlers(dp)
+        
+        # Verify bot
+        me = await bot_instance.get_me()
+        logger.info(f"✅ Bot started: @{me.username}")
+        
+        # Start polling in background
+        polling_task = asyncio.create_task(
+            dp.start_polling(bot_instance, allowed_updates=dp.resolve_used_update_types())
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Bot startup failed: {e}")
+
+
+async def stop_bot():
+    """Stop the Telegram bot"""
+    global bot_instance, polling_task
+    
+    logger.info("🛑 Stopping bot...")
+    
+    if polling_task:
+        polling_task.cancel()
+        try:
+            await polling_task
+        except asyncio.CancelledError:
+            pass
+    
+    if bot_instance:
+        await bot_instance.session.close()
+    
+    logger.info("✅ Bot stopped")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events"""
+    # Startup
+    logger.info("🚀 Application starting...")
+    Base.metadata.create_all(bind=engine)
+    logger.info("✅ Database tables created")
+    
+    # Start bot
+    await start_bot()
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Application shutting down...")
+    await stop_bot()
+
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Telegram Ads Marketplace API",
     description="MVP for connecting channel owners and advertisers",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS
@@ -30,16 +124,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create tables on startup
-@app.on_event("startup")
-async def startup():
-    """Create database tables on startup"""
-    Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created/verified")
-
 
 # ============================================================================
-# PYDANTIC MODELS FOR REQUEST VALIDATION
+# PYDANTIC MODELS
 # ============================================================================
 
 class ChannelCreate(BaseModel):
@@ -52,7 +139,7 @@ class ChannelCreate(BaseModel):
 
 
 # ============================================================================
-# HEALTH CHECK & INFO ENDPOINTS
+# HEALTH CHECK ENDPOINTS
 # ============================================================================
 
 @app.get("/")
@@ -61,6 +148,7 @@ async def root():
     return {
         "status": "running",
         "message": "Telegram Ads Marketplace API is live! 🚀",
+        "bot_status": "running" if bot_instance else "stopped",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0"
     }
@@ -68,7 +156,7 @@ async def root():
 
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
-    """Detailed health check - tests database connection"""
+    """Detailed health check"""
     try:
         db.execute(text("SELECT 1"))
         db_status = "connected"
@@ -78,13 +166,14 @@ async def health_check(db: Session = Depends(get_db)):
     return {
         "status": "healthy",
         "database": db_status,
+        "bot": "running" if bot_instance else "stopped",
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
 @app.get("/stats")
 async def get_stats(db: Session = Depends(get_db)):
-    """Get overall marketplace statistics"""
+    """Get marketplace statistics"""
     try:
         total_users = db.query(User).count()
         total_channels = db.query(Channel).count()
@@ -115,7 +204,7 @@ async def create_user(
     first_name: str = None,
     db: Session = Depends(get_db)
 ):
-    """Create or get a user by Telegram ID"""
+    """Create or get a user"""
     existing_user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if existing_user:
         return existing_user
@@ -155,7 +244,7 @@ async def list_channels(skip: int = 0, limit: int = 50, db: Session = Depends(ge
 
 @app.get("/channels/{channel_id}")
 async def get_channel(channel_id: int, db: Session = Depends(get_db)):
-    """Get detailed information about a specific channel"""
+    """Get channel details"""
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -164,11 +253,8 @@ async def get_channel(channel_id: int, db: Session = Depends(get_db)):
 
 @app.post("/channels/create")
 async def create_channel(channel_data: ChannelCreate, db: Session = Depends(get_db)):
-    """
-    🔥 NEW! Create a new channel listing
-    Called by the bot when channel owner registers their channel
-    """
-    # Check if channel already exists
+    """Create a new channel listing"""
+    # Check if exists
     existing = db.query(Channel).filter(
         Channel.telegram_channel_id == channel_data.telegram_channel_id
     ).first()
@@ -176,7 +262,7 @@ async def create_channel(channel_data: ChannelCreate, db: Session = Depends(get_
     if existing:
         raise HTTPException(status_code=400, detail="Channel already registered")
     
-    # Get or create owner user
+    # Get or create owner
     owner = db.query(User).filter(User.telegram_id == channel_data.owner_telegram_id).first()
     if not owner:
         owner = User(telegram_id=channel_data.owner_telegram_id)
@@ -192,7 +278,7 @@ async def create_channel(channel_data: ChannelCreate, db: Session = Depends(get_
         channel_title=channel_data.channel_title,
         pricing=channel_data.pricing,
         status=channel_data.status,
-        subscribers=0,  # Will be updated by stats fetcher
+        subscribers=0,
         avg_views=0,
         avg_reach=0
     )
@@ -234,7 +320,7 @@ async def list_deals(
 
 @app.get("/deals/{deal_id}")
 async def get_deal(deal_id: int, db: Session = Depends(get_db)):
-    """Get detailed information about a specific deal"""
+    """Get deal details"""
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -248,4 +334,4 @@ async def get_deal(deal_id: int, db: Session = Depends(get_db)):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
