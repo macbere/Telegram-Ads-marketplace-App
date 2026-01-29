@@ -1,6 +1,6 @@
 """
 bot_handlers.py - Command handlers for the Telegram bot
-Handles /start, /help, channel listing, and advertiser campaigns
+NOW WITH ACTUAL DATABASE INTEGRATION!
 """
 
 from aiogram import Router, F
@@ -10,6 +10,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import requests
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 # API base URL (your Render API)
 API_URL = os.getenv("API_URL", "http://localhost:8000")
@@ -33,30 +36,49 @@ class CampaignCreation(StatesGroup):
 
 
 # ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def call_api(method: str, endpoint: str, **kwargs):
+    """Helper function to call API with error handling"""
+    try:
+        url = f"{API_URL}{endpoint}"
+        logger.info(f"API Call: {method} {url}")
+        
+        if method == "GET":
+            response = requests.get(url, params=kwargs.get('params'), timeout=10)
+        elif method == "POST":
+            response = requests.post(url, json=kwargs.get('json'), params=kwargs.get('params'), timeout=10)
+        else:
+            return None
+            
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API Error: {e}")
+        return None
+
+
+# ============================================================================
 # START & HELP COMMANDS
 # ============================================================================
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    """
-    Welcome message when user starts the bot
-    """
+    """Welcome message when user starts the bot"""
     user_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
     
     # Register user in database via API
-    try:
-        response = requests.post(
-            f"{API_URL}/users/",
-            params={
-                "telegram_id": user_id,
-                "username": username,
-                "first_name": first_name
-            }
-        )
-    except Exception as e:
-        print(f"Error registering user: {e}")
+    result = call_api("POST", "/users/", params={
+        "telegram_id": user_id,
+        "username": username,
+        "first_name": first_name
+    })
+    
+    if result:
+        logger.info(f"✅ User registered: {user_id} (@{username})")
     
     # Create inline keyboard
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -81,9 +103,7 @@ Hi {first_name}! This bot connects:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    """
-    Show help message with available commands
-    """
+    """Show help message with available commands"""
     help_text = """
 📚 <b>Available Commands:</b>
 
@@ -110,13 +130,10 @@ Contact support: @support (coming soon)
 
 @router.message(Command("stats"))
 async def cmd_stats(message: Message):
-    """
-    Show marketplace statistics
-    """
-    try:
-        response = requests.get(f"{API_URL}/stats")
-        data = response.json()
-        
+    """Show marketplace statistics"""
+    data = call_api("GET", "/stats")
+    
+    if data:
         stats_text = f"""
 📊 <b>Marketplace Statistics</b>
 
@@ -128,7 +145,7 @@ async def cmd_stats(message: Message):
 <i>Last updated: {data['timestamp'][:19]}</i>
 """
         await message.answer(stats_text)
-    except Exception as e:
+    else:
         await message.answer("❌ Could not fetch statistics. Please try again later.")
 
 
@@ -138,9 +155,7 @@ async def cmd_stats(message: Message):
 
 @router.callback_query(F.data == "role_channel_owner")
 async def handle_channel_owner(callback: CallbackQuery):
-    """
-    User selected Channel Owner role
-    """
+    """User selected Channel Owner role"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
         [InlineKeyboardButton(text="📋 My Channels", callback_data="my_channels")],
@@ -165,9 +180,7 @@ As a channel owner, you can:
 
 @router.callback_query(F.data == "role_advertiser")
 async def handle_advertiser(callback: CallbackQuery):
-    """
-    User selected Advertiser role
-    """
+    """User selected Advertiser role"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
         [InlineKeyboardButton(text="➕ Create Campaign", callback_data="create_campaign")],
@@ -192,9 +205,7 @@ As an advertiser, you can:
 
 @router.callback_query(F.data == "add_channel")
 async def handle_add_channel(callback: CallbackQuery, state: FSMContext):
-    """
-    Start channel registration process
-    """
+    """Start channel registration process"""
     text = """
 ➕ <b>Add Your Channel</b>
 
@@ -217,42 +228,40 @@ This allows us to:
 
 @router.callback_query(F.data == "browse_channels")
 async def handle_browse_channels(callback: CallbackQuery):
-    """
-    Show list of available channels
-    """
-    try:
-        response = requests.get(f"{API_URL}/channels/", params={"limit": 10})
-        channels = response.json()
-        
-        if not channels:
-            text = """
+    """Show list of available channels"""
+    channels = call_api("GET", "/channels/", params={"limit": 10})
+    
+    if channels is None:
+        await callback.message.edit_text("❌ Error loading channels. Please try again.")
+        await callback.answer()
+        return
+    
+    if not channels:
+        text = """
 😔 <b>No Channels Available Yet</b>
 
 There are currently no channels listed in the marketplace.
 Check back soon, or invite channel owners to join!
 """
-            await callback.message.edit_text(text)
-            await callback.answer()
-            return
+        await callback.message.edit_text(text)
+        await callback.answer()
+        return
+    
+    text = "📢 <b>Available Channels:</b>\n\n"
+    
+    for channel in channels:
+        pricing = channel.get('pricing', {})
+        post_price = pricing.get('post', 'N/A')
         
-        text = "📢 <b>Available Channels:</b>\n\n"
-        
-        for channel in channels:
-            pricing = channel.get('pricing', {})
-            post_price = pricing.get('post', 'N/A')
-            
-            text += f"""
+        text += f"""
 <b>{channel['channel_title']}</b>
-👥 Subscribers: {channel['subscribers']:,}
-👁 Avg Views: {channel['avg_views']:,}
+👥 Subscribers: {channel.get('subscribers', 0):,}
+👁 Avg Views: {channel.get('avg_views', 0):,}
 💰 Post Price: ${post_price}
 ━━━━━━━━━━━━━━━━
 """
-        
-        await callback.message.edit_text(text)
-    except Exception as e:
-        await callback.message.edit_text("❌ Error loading channels. Please try again.")
     
+    await callback.message.edit_text(text)
     await callback.answer()
 
 
@@ -262,14 +271,19 @@ Check back soon, or invite channel owners to join!
 
 @router.message(ChannelRegistration.waiting_for_channel)
 async def process_channel_forward(message: Message, state: FSMContext):
-    """
-    Process forwarded message from channel
-    """
-    if not message.forward_from_chat:
+    """Process forwarded message from channel - NOW SAVES TO DATABASE!"""
+    
+    # Validate it's a forwarded message from a channel
+    if not message.forward_origin:
         await message.answer("❌ Please forward a message from your channel.")
         return
     
-    channel = message.forward_from_chat
+    # Get channel info from forward origin
+    if hasattr(message.forward_origin, 'chat'):
+        channel = message.forward_origin.chat
+    else:
+        await message.answer("❌ Could not detect channel information. Please try again.")
+        return
     
     if channel.type != "channel":
         await message.answer("❌ This is not a channel. Please forward from a channel.")
@@ -279,14 +293,14 @@ async def process_channel_forward(message: Message, state: FSMContext):
     await state.update_data(
         channel_id=channel.id,
         channel_title=channel.title,
-        channel_username=channel.username
+        channel_username=channel.username if hasattr(channel, 'username') else None
     )
     
     text = f"""
 ✅ <b>Channel Detected!</b>
 
 Channel: <b>{channel.title}</b>
-Username: @{channel.username or 'private'}
+Username: @{channel.username if hasattr(channel, 'username') and channel.username else 'private'}
 
 Now, set your pricing for ad formats.
 
@@ -304,9 +318,8 @@ Repost: 30
 
 @router.message(ChannelRegistration.waiting_for_pricing)
 async def process_pricing(message: Message, state: FSMContext):
-    """
-    Process channel pricing input
-    """
+    """Process channel pricing input - NOW ACTUALLY SAVES TO DATABASE!"""
+    
     # Parse pricing from message
     pricing = {}
     lines = message.text.strip().split('\n')
@@ -328,9 +341,22 @@ async def process_pricing(message: Message, state: FSMContext):
     # Get channel data from state
     data = await state.get_data()
     
-    # TODO: Register channel via API
-    # For now, just confirm
-    text = f"""
+    # 🔥 NOW WE ACTUALLY SAVE TO DATABASE VIA API!
+    channel_data = {
+        "owner_telegram_id": message.from_user.id,
+        "telegram_channel_id": data['channel_id'],
+        "channel_username": data['channel_username'],
+        "channel_title": data['channel_title'],
+        "pricing": pricing,
+        "status": "active"
+    }
+    
+    result = call_api("POST", "/channels/create", json=channel_data)
+    
+    if result:
+        logger.info(f"✅ Channel saved to database: {data['channel_title']}")
+        
+        text = f"""
 🎉 <b>Channel Listed Successfully!</b>
 
 Channel: <b>{data['channel_title']}</b>
@@ -338,6 +364,15 @@ Pricing: {', '.join([f'{k.title()}: ${v}' for k, v in pricing.items()])}
 
 Your channel is now visible to advertisers!
 You'll be notified when someone wants to place an ad.
+
+Channel ID in database: #{result.get('id', 'unknown')}
+"""
+    else:
+        logger.error(f"❌ Failed to save channel: {data['channel_title']}")
+        text = """
+❌ <b>Error saving channel to database</b>
+
+Please try again later or contact support.
 """
     
     await message.answer(text)
@@ -349,7 +384,6 @@ You'll be notified when someone wants to place an ad.
 # ============================================================================
 
 def setup_handlers(dp):
-    """
-    Register all handlers with the dispatcher
-    """
+    """Register all handlers with the dispatcher"""
     dp.include_router(router)
+    logger.info("✅ Router registered with dispatcher")
