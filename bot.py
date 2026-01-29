@@ -1,6 +1,6 @@
 """
 bot.py - Telegram Bot for Ads Marketplace
-Runs in polling mode - simple and reliable
+Polling mode with forced webhook removal
 """
 
 import asyncio
@@ -29,10 +29,33 @@ if not BOT_TOKEN or len(BOT_TOKEN) < 20:
 logger.info(f"✅ Token: {BOT_TOKEN[:15]}...{BOT_TOKEN[-8:]}")
 
 
+async def force_delete_webhook():
+    """Force delete webhook before starting polling"""
+    bot = Bot(token=BOT_TOKEN)
+    try:
+        # Check current webhook
+        webhook_info = await bot.get_webhook_info()
+        if webhook_info.url:
+            logger.warning(f"⚠️  Webhook is active: {webhook_info.url}")
+            logger.info("🧹 Deleting webhook...")
+            await bot.delete_webhook(drop_pending_updates=True)
+            await asyncio.sleep(2)  # Wait for Telegram to process
+            logger.info("✅ Webhook deleted")
+        else:
+            logger.info("✅ No webhook active")
+    except Exception as e:
+        logger.error(f"❌ Error checking/deleting webhook: {e}")
+    finally:
+        await bot.session.close()
+
+
 async def main():
     """Start the bot with polling"""
     
-    # Initialize
+    # FIRST: Force delete any existing webhook
+    await force_delete_webhook()
+    
+    # THEN: Initialize bot fresh
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     
@@ -44,13 +67,6 @@ async def main():
         logger.error(f"❌ Bot verification failed: {e}")
         await bot.session.close()
         sys.exit(1)
-    
-    # Remove any existing webhook (critical!)
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("✅ Webhook removed (using polling)")
-    except Exception as e:
-        logger.warning(f"⚠️  Could not remove webhook: {e}")
     
     # Setup handlers
     setup_handlers(dp)
