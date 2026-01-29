@@ -1,12 +1,14 @@
 """
 bot.py - Telegram Bot for Ads Marketplace
-Polling mode with forced webhook removal and proper shutdown handling
+WITH PROCESS LOCKING TO PREVENT DOUBLE-START
 """
 
 import asyncio
 import logging
 import os
 import sys
+import time
+from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -18,6 +20,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Lock file to prevent multiple instances
+LOCK_FILE = "/tmp/telegram_bot.lock"
 
 # Get token
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
@@ -32,8 +37,63 @@ logger.info(f"✅ Token loaded: {BOT_TOKEN[:15]}...{BOT_TOKEN[-8:]}")
 bot_instance = None
 
 
+def acquire_lock():
+    """Acquire lock file to ensure only one bot instance runs"""
+    lock_path = Path(LOCK_FILE)
+    
+    # Check if lock file exists
+    if lock_path.exists():
+        try:
+            # Read PID from lock file
+            old_pid = int(lock_path.read_text().strip())
+            
+            # Check if that process is still running
+            try:
+                os.kill(old_pid, 0)  # Signal 0 just checks if process exists
+                logger.error(f"❌ Another bot instance is running (PID: {old_pid})")
+                logger.error(f"❌ Waiting for old instance to die...")
+                
+                # Wait up to 30 seconds for old process to die
+                for i in range(30):
+                    time.sleep(1)
+                    try:
+                        os.kill(old_pid, 0)
+                    except OSError:
+                        logger.info(f"✅ Old process died after {i+1} seconds")
+                        break
+                else:
+                    logger.error("❌ Old process still running after 30 seconds. Forcing kill...")
+                    try:
+                        os.kill(old_pid, 9)  # SIGKILL
+                        time.sleep(2)
+                    except:
+                        pass
+                        
+            except OSError:
+                # Process doesn't exist, lock file is stale
+                logger.info("✅ Removing stale lock file")
+                lock_path.unlink()
+        except:
+            # Lock file is corrupted, remove it
+            logger.warning("⚠️  Corrupted lock file, removing")
+            lock_path.unlink()
+    
+    # Create new lock file with our PID
+    current_pid = os.getpid()
+    lock_path.write_text(str(current_pid))
+    logger.info(f"✅ Lock acquired (PID: {current_pid})")
+
+
+def release_lock():
+    """Release lock file"""
+    lock_path = Path(LOCK_FILE)
+    if lock_path.exists():
+        lock_path.unlink()
+        logger.info("✅ Lock released")
+
+
 async def force_delete_webhook():
-    """Force delete webhook before starting polling - ROBUST VERSION"""
+    """Force delete webhook before starting polling"""
     temp_bot = Bot(token=BOT_TOKEN)
     try:
         logger.info("🔍 Checking webhook status...")
@@ -47,12 +107,12 @@ async def force_delete_webhook():
             
             if result:
                 logger.info("✅ Webhook deleted successfully")
-                await asyncio.sleep(3)  # Give Telegram time to process
+                await asyncio.sleep(3)
                 
                 # Verify deletion
                 verify_info = await temp_bot.get_webhook_info()
                 if verify_info.url:
-                    logger.error(f"❌ Webhook still active after deletion: {verify_info.url}")
+                    logger.error(f"❌ Webhook still active: {verify_info.url}")
                     raise Exception("Webhook deletion failed")
                 else:
                     logger.info("✅ Webhook deletion verified")
@@ -74,6 +134,12 @@ async def main():
     global bot_instance
     
     try:
+        # STEP 0: Acquire lock
+        logger.info("=" * 50)
+        logger.info("STEP 0: Process Lock")
+        logger.info("=" * 50)
+        acquire_lock()
+        
         # STEP 1: Force delete any existing webhook
         logger.info("=" * 50)
         logger.info("STEP 1: Webhook Cleanup")
@@ -115,7 +181,7 @@ async def main():
         await dp.start_polling(
             bot_instance,
             allowed_updates=dp.resolve_used_update_types(),
-            drop_pending_updates=True  # Drop old updates
+            drop_pending_updates=True
         )
         
     except KeyboardInterrupt:
@@ -129,6 +195,8 @@ async def main():
             logger.info("🧹 Cleaning up bot session...")
             await bot_instance.session.close()
             logger.info("✅ Bot session closed")
+        
+        release_lock()
 
 
 if __name__ == "__main__":
@@ -136,4 +204,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except Exception as e:
         logger.error(f"❌ Application crashed: {e}", exc_info=True)
+        release_lock()
         sys.exit(1)
