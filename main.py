@@ -3,32 +3,61 @@ main.py - FastAPI server for Telegram Ads Marketplace
 This is the main application entry point
 """
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from database import engine, get_db, Base
 from models import User, Channel, Deal, Post, ChannelStats
 import os
 from datetime import datetime
+from contextlib import asynccontextmanager
 
-# Create all database tables
-Base.metadata.create_all(bind=engine)
+# Import bot setup
+import bot
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Startup and shutdown events
+    """
+    # Startup
+    Base.metadata.create_all(bind=engine)
+    await bot.setup_webhook()
+    yield
+    # Shutdown
+    await bot.remove_webhook()
+
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Telegram Ads Marketplace API",
     description="MVP for connecting channel owners and advertisers",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-# Enable CORS (Cross-Origin Resource Sharing) for frontend access
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# TELEGRAM WEBHOOK ENDPOINT
+# ============================================================================
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(request: Request):
+    """
+    Webhook endpoint for receiving Telegram updates
+    """
+    return await bot.process_update(request)
 
 
 # ============================================================================
@@ -54,8 +83,6 @@ async def health_check(db: Session = Depends(get_db)):
     Detailed health check - tests database connection
     """
     try:
-        # Try to query the database (SQLAlchemy 2.0 syntax)
-        from sqlalchemy import text
         db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
@@ -101,12 +128,10 @@ async def create_user(telegram_id: int, username: str = None, first_name: str = 
     """
     Create or get a user by Telegram ID
     """
-    # Check if user already exists
     existing_user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if existing_user:
         return existing_user
     
-    # Create new user
     new_user = User(
         telegram_id=telegram_id,
         username=username,
@@ -136,7 +161,7 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
 @app.get("/channels/")
 async def list_channels(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
     """
-    List all active channels (for advertisers to browse)
+    List all active channels
     """
     channels = db.query(Channel).filter(
         Channel.status == "active"
@@ -162,7 +187,7 @@ async def get_channel(channel_id: int, db: Session = Depends(get_db)):
 @app.get("/deals/")
 async def list_deals(user_id: int = None, status: str = None, db: Session = Depends(get_db)):
     """
-    List deals, optionally filtered by user or status
+    List deals
     """
     query = db.query(Deal)
     
@@ -185,24 +210,6 @@ async def get_deal(deal_id: int, db: Session = Depends(get_db)):
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
     return deal
-
-
-# ============================================================================
-# WEBHOOK ENDPOINT (for Telegram bot)
-# ============================================================================
-
-@app.post("/webhook/{bot_token}")
-async def telegram_webhook(bot_token: str):
-    """
-    Webhook endpoint for receiving Telegram updates
-    This will be used by the Telegram bot to receive messages
-    """
-    expected_token = os.getenv("BOT_TOKEN", "")
-    
-    if bot_token != expected_token.split(":")[-1]:  # Simple token validation
-        raise HTTPException(status_code=403, detail="Invalid bot token")
-    
-    return {"status": "ok"}
 
 
 # ============================================================================
