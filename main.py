@@ -1,6 +1,6 @@
 """
 main.py - FastAPI server for Telegram Ads Marketplace
-This is the main application entry point
+NOW WITH CHANNEL CREATION ENDPOINT!
 """
 
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -9,33 +9,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import engine, get_db, Base
 from models import User, Channel, Deal, Post, ChannelStats
+from pydantic import BaseModel
+from typing import Optional, Dict
 import os
 from datetime import datetime
-from contextlib import asynccontextmanager
-
-# Import bot setup
-import bot
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Startup and shutdown events
-    """
-    # Startup
-    Base.metadata.create_all(bind=engine)
-    await bot.setup_webhook()
-    yield
-    # Shutdown
-    await bot.remove_webhook()
-
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Telegram Ads Marketplace API",
     description="MVP for connecting channel owners and advertisers",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
 
 # Enable CORS
@@ -47,17 +30,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create tables on startup
+@app.on_event("startup")
+async def startup():
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database tables created/verified")
+
 
 # ============================================================================
-# TELEGRAM WEBHOOK ENDPOINT
+# PYDANTIC MODELS FOR REQUEST VALIDATION
 # ============================================================================
 
-@app.post("/webhook/telegram")
-async def telegram_webhook(request: Request):
-    """
-    Webhook endpoint for receiving Telegram updates
-    """
-    return await bot.process_update(request)
+class ChannelCreate(BaseModel):
+    owner_telegram_id: int
+    telegram_channel_id: int
+    channel_username: Optional[str] = None
+    channel_title: str
+    pricing: Dict[str, float]
+    status: str = "active"
 
 
 # ============================================================================
@@ -66,9 +56,7 @@ async def telegram_webhook(request: Request):
 
 @app.get("/")
 async def root():
-    """
-    Health check endpoint - confirms the server is running
-    """
+    """Health check endpoint"""
     return {
         "status": "running",
         "message": "Telegram Ads Marketplace API is live! 🚀",
@@ -79,9 +67,7 @@ async def root():
 
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
-    """
-    Detailed health check - tests database connection
-    """
+    """Detailed health check - tests database connection"""
     try:
         db.execute(text("SELECT 1"))
         db_status = "connected"
@@ -97,9 +83,7 @@ async def health_check(db: Session = Depends(get_db)):
 
 @app.get("/stats")
 async def get_stats(db: Session = Depends(get_db)):
-    """
-    Get overall marketplace statistics
-    """
+    """Get overall marketplace statistics"""
     try:
         total_users = db.query(User).count()
         total_channels = db.query(Channel).count()
@@ -124,10 +108,13 @@ async def get_stats(db: Session = Depends(get_db)):
 # ============================================================================
 
 @app.post("/users/")
-async def create_user(telegram_id: int, username: str = None, first_name: str = None, db: Session = Depends(get_db)):
-    """
-    Create or get a user by Telegram ID
-    """
+async def create_user(
+    telegram_id: int,
+    username: str = None,
+    first_name: str = None,
+    db: Session = Depends(get_db)
+):
+    """Create or get a user by Telegram ID"""
     existing_user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if existing_user:
         return existing_user
@@ -145,9 +132,7 @@ async def create_user(telegram_id: int, username: str = None, first_name: str = 
 
 @app.get("/users/{telegram_id}")
 async def get_user(telegram_id: int, db: Session = Depends(get_db)):
-    """
-    Get user by Telegram ID
-    """
+    """Get user by Telegram ID"""
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -160,9 +145,7 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
 
 @app.get("/channels/")
 async def list_channels(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """
-    List all active channels
-    """
+    """List all active channels"""
     channels = db.query(Channel).filter(
         Channel.status == "active"
     ).offset(skip).limit(limit).all()
@@ -171,13 +154,58 @@ async def list_channels(skip: int = 0, limit: int = 50, db: Session = Depends(ge
 
 @app.get("/channels/{channel_id}")
 async def get_channel(channel_id: int, db: Session = Depends(get_db)):
-    """
-    Get detailed information about a specific channel
-    """
+    """Get detailed information about a specific channel"""
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
     return channel
+
+
+@app.post("/channels/create")
+async def create_channel(channel_data: ChannelCreate, db: Session = Depends(get_db)):
+    """
+    🔥 NEW! Create a new channel listing
+    Called by the bot when channel owner registers their channel
+    """
+    # Check if channel already exists
+    existing = db.query(Channel).filter(
+        Channel.telegram_channel_id == channel_data.telegram_channel_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="Channel already registered")
+    
+    # Get or create owner user
+    owner = db.query(User).filter(User.telegram_id == channel_data.owner_telegram_id).first()
+    if not owner:
+        owner = User(telegram_id=channel_data.owner_telegram_id)
+        db.add(owner)
+        db.commit()
+        db.refresh(owner)
+    
+    # Create channel
+    new_channel = Channel(
+        owner_id=owner.id,
+        telegram_channel_id=channel_data.telegram_channel_id,
+        channel_username=channel_data.channel_username,
+        channel_title=channel_data.channel_title,
+        pricing=channel_data.pricing,
+        status=channel_data.status,
+        subscribers=0,  # Will be updated by stats fetcher
+        avg_views=0,
+        avg_reach=0
+    )
+    
+    db.add(new_channel)
+    db.commit()
+    db.refresh(new_channel)
+    
+    return {
+        "id": new_channel.id,
+        "channel_title": new_channel.channel_title,
+        "status": "created",
+        "message": "Channel successfully registered!"
+    }
 
 
 # ============================================================================
@@ -185,10 +213,12 @@ async def get_channel(channel_id: int, db: Session = Depends(get_db)):
 # ============================================================================
 
 @app.get("/deals/")
-async def list_deals(user_id: int = None, status: str = None, db: Session = Depends(get_db)):
-    """
-    List deals
-    """
+async def list_deals(
+    user_id: int = None,
+    status: str = None,
+    db: Session = Depends(get_db)
+):
+    """List deals"""
     query = db.query(Deal)
     
     if user_id:
@@ -203,9 +233,7 @@ async def list_deals(user_id: int = None, status: str = None, db: Session = Depe
 
 @app.get("/deals/{deal_id}")
 async def get_deal(deal_id: int, db: Session = Depends(get_db)):
-    """
-    Get detailed information about a specific deal
-    """
+    """Get detailed information about a specific deal"""
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
