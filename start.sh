@@ -12,6 +12,14 @@ echo "  - PORT: $PORT"
 echo "  - BOT_TOKEN: ${BOT_TOKEN:0:15}...${BOT_TOKEN: -8}"
 echo ""
 
+# CRITICAL: Wait on first boot to let old instances die
+if [ ! -f /tmp/first_boot_done ]; then
+    echo "🕐 First boot detected - waiting 30 seconds for old instances to die..."
+    sleep 30
+    touch /tmp/first_boot_done
+    echo "✅ Wait complete"
+fi
+
 # Kill any zombie processes
 echo "🧹 Cleaning up old processes..."
 pkill -9 -f "uvicorn" 2>/dev/null || true
