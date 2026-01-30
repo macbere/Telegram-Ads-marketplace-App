@@ -1,6 +1,6 @@
 """
 bot_handlers.py - Command handlers for the Telegram bot
-FINAL VERSION - Uses localhost, comprehensive error handling
+FIXED: Async HTTP client to prevent event loop blocking
 """
 
 from aiogram import Router, F
@@ -8,14 +8,15 @@ from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import requests
+import aiohttp
 import os
 import logging
 import json
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# API base URL - CRITICAL: Use localhost since bot and API run in same process
+# API base URL - Use localhost since bot and API run in same process
 PORT = os.getenv("PORT", "10000")
 API_URL = f"http://127.0.0.1:{PORT}"
 
@@ -23,6 +24,9 @@ logger.info(f"🔗 Bot will call API at: {API_URL}")
 
 # Create router
 router = Router()
+
+# Shared aiohttp session (initialized in setup_handlers)
+http_session: Optional[aiohttp.ClientSession] = None
 
 
 # ============================================================================
@@ -40,54 +44,72 @@ class CampaignCreation(StatesGroup):
 
 
 # ============================================================================
-# HELPER FUNCTIONS
+# ASYNC HTTP CLIENT
 # ============================================================================
 
-def call_api(method: str, endpoint: str, **kwargs):
-    """Call API with comprehensive error handling"""
+async def get_http_session() -> aiohttp.ClientSession:
+    """Get or create shared HTTP session"""
+    global http_session
+    if http_session is None or http_session.closed:
+        timeout = aiohttp.ClientTimeout(total=30, connect=5, sock_read=10)
+        http_session = aiohttp.ClientSession(
+            timeout=timeout,
+            connector=aiohttp.TCPConnector(limit=10, limit_per_host=5)
+        )
+        logger.info("✅ HTTP session created")
+    return http_session
+
+
+async def close_http_session():
+    """Close HTTP session on shutdown"""
+    global http_session
+    if http_session and not http_session.closed:
+        await http_session.close()
+        logger.info("✅ HTTP session closed")
+
+
+async def call_api(method: str, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
+    """
+    Async API caller - prevents event loop blocking
+    
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        endpoint: API endpoint path
+        **kwargs: Additional arguments (json, params)
+    
+    Returns:
+        JSON response or None on error
+    """
     try:
         url = f"{API_URL}{endpoint}"
         logger.info(f"🔗 API {method} {url}")
         
-        if kwargs.get('json'):
+        session = await get_http_session()
+        
+        # Prepare request kwargs
+        request_kwargs = {}
+        if 'json' in kwargs:
+            request_kwargs['json'] = kwargs['json']
             logger.debug(f"📤 Payload: {json.dumps(kwargs['json'], indent=2)}")
+        if 'params' in kwargs:
+            request_kwargs['params'] = kwargs['params']
         
-        if method == "GET":
-            response = requests.get(
-                url,
-                params=kwargs.get('params'),
-                timeout=5  # Shorter timeout for localhost
-            )
-        elif method == "POST":
-            response = requests.post(
-                url,
-                json=kwargs.get('json'),
-                params=kwargs.get('params'),
-                headers={'Content-Type': 'application/json'},
-                timeout=5
-            )
-        else:
-            logger.error(f"❌ Unsupported method: {method}")
-            return None
+        # Make async request
+        async with session.request(method, url, **request_kwargs) as response:
+            logger.info(f"📥 Response: {response.status}")
+            
+            if response.status >= 400:
+                error_text = await response.text()
+                logger.error(f"❌ API Error {response.status}: {error_text[:500]}")
+                return None
+            
+            return await response.json()
         
-        logger.info(f"📥 Response: {response.status_code}")
-        
-        if response.status_code >= 400:
-            logger.error(f"❌ API Error: {response.text}")
-        
-        response.raise_for_status()
-        return response.json()
-        
-    except requests.exceptions.Timeout:
-        logger.error(f"⏱️ API timeout: {url}")
-        return None
-    except requests.exceptions.ConnectionError as e:
+    except aiohttp.ClientConnectionError as e:
         logger.error(f"🔌 Connection error: {e}")
         return None
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"❌ HTTP error: {e.response.status_code if e.response else 'unknown'}")
-        if e.response:
-            logger.error(f"Response body: {e.response.text[:500]}")
+    except aiohttp.ClientTimeout:
+        logger.error(f"⏱️ Request timeout: {url}")
         return None
     except Exception as e:
         logger.error(f"❌ Unexpected error: {e}", exc_info=True)
@@ -107,8 +129,8 @@ async def cmd_start(message: Message):
     
     logger.info(f"👤 /start from user {user_id} (@{username})")
     
-    # Register user
-    result = call_api("POST", "/users/", params={
+    # Register user (async)
+    result = await call_api("POST", "/users/", params={
         "telegram_id": user_id,
         "username": username,
         "first_name": first_name
@@ -169,7 +191,7 @@ Contact support: @support (coming soon)
 @router.message(Command("stats"))
 async def cmd_stats(message: Message):
     """Show marketplace statistics"""
-    data = call_api("GET", "/stats")
+    data = await call_api("GET", "/stats")
     
     if data:
         stats_text = f"""
@@ -267,7 +289,7 @@ This allows us to:
 @router.callback_query(F.data == "browse_channels")
 async def handle_browse_channels(callback: CallbackQuery):
     """Browse available channels"""
-    channels = call_api("GET", "/channels/", params={"limit": 10})
+    channels = await call_api("GET", "/channels/", params={"limit": 10})
     
     if channels is None:
         await callback.message.edit_text("❌ Error loading channels. Please try again.")
@@ -381,7 +403,7 @@ async def process_pricing(message: Message, state: FSMContext):
     logger.info(f"💾 Saving channel: {data['channel_title']}")
     logger.info(f"📊 Pricing: {pricing}")
     
-    # Save to database
+    # Save to database via async API call
     channel_data = {
         "owner_telegram_id": message.from_user.id,
         "telegram_channel_id": data['channel_id'],
@@ -391,10 +413,10 @@ async def process_pricing(message: Message, state: FSMContext):
         "status": "active"
     }
     
-    result = call_api("POST", "/channels/create", json=channel_data)
+    result = await call_api("POST", "/channels/create", json=channel_data)
     
-    if result:
-        logger.info(f"✅ Channel saved: ID {result.get('id')}")
+    if result and result.get('id'):
+        logger.info(f"✅ Channel saved: ID {result['id']}")
         
         text = f"""
 🎉 <b>Channel Listed Successfully!</b>
@@ -405,16 +427,18 @@ Pricing: {', '.join([f'{k.title()}: ${v}' for k, v in pricing.items()])}
 Your channel is now visible to advertisers!
 You'll be notified when someone wants to place an ad.
 
-Channel ID: #{result.get('id', 'unknown')}
+Channel ID: #{result['id']}
 """
     else:
         logger.error(f"❌ Failed to save channel: {data['channel_title']}")
-        text = """
+        error_msg = result.get('detail', 'Unknown error') if result else 'Server timeout'
+        
+        text = f"""
 ❌ <b>Error saving channel to database</b>
 
-The server is currently experiencing issues.
-Please try again in a few moments.
+Reason: {error_msg}
 
+Please try again in a few moments.
 If the problem persists, contact support.
 """
     
@@ -430,3 +454,9 @@ def setup_handlers(dp):
     """Register all handlers"""
     dp.include_router(router)
     logger.info("✅ Router registered with dispatcher")
+
+
+async def shutdown_handlers():
+    """Cleanup on shutdown"""
+    await close_http_session()
+    logger.info("✅ Handlers cleaned up")
