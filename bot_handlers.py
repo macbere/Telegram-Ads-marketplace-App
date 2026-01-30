@@ -15,8 +15,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # API base URL (your Render API)
-API_URL = os.getenv("API_URL", "http://localhost:8000")
-
+PORT = os.getenv("PORT", "10000")
+API_URL = f"http://127.0.0.1:{PORT}"
 # Create router
 router = Router()
 
