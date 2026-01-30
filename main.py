@@ -1,6 +1,6 @@
 """
 main.py - Combined FastAPI + Telegram Bot
-FINAL VERSION - All issues resolved
+FINAL VERSION - Async HTTP, proper cleanup, no deadlocks
 """
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from bot_handlers import setup_handlers
+import bot_handlers
 
 # Logging
 logging.basicConfig(
@@ -72,12 +72,10 @@ async def cleanup_webhook():
                 raise Exception("Failed to delete webhook")
         else:
             logger.info("✅ No webhook found")
-            # Still wait to ensure clean start
             await wait_for_telegram_release()
             
     except Exception as e:
         logger.error(f"❌ Error during webhook cleanup: {e}")
-        # Wait anyway to be safe
         await wait_for_telegram_release()
     finally:
         await temp_bot.session.close()
@@ -122,10 +120,10 @@ async def start_bot():
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         dp = Dispatcher()
-        setup_handlers(dp)
+        bot_handlers.setup_handlers(dp)
         logger.info("✅ Bot and dispatcher initialized")
         
-        # Step 4: Start polling with retry mechanism
+        # Step 4: Start polling
         logger.info("STEP 4: Starting Polling")
         logger.info("🎧 Bot is now listening for messages...")
         logger.info("=" * 60)
@@ -134,7 +132,7 @@ async def start_bot():
             dp.start_polling(
                 bot_instance,
                 allowed_updates=dp.resolve_used_update_types(),
-                drop_pending_updates=True  # Drop old messages
+                drop_pending_updates=True
             )
         )
         
@@ -157,6 +155,9 @@ async def stop_bot():
             await polling_task
         except asyncio.CancelledError:
             logger.info("✅ Polling cancelled")
+    
+    # Cleanup bot handlers
+    await bot_handlers.shutdown_handlers()
     
     # Cleanup webhook and close session
     if bot_instance:
@@ -230,7 +231,7 @@ class ChannelCreate(BaseModel):
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    bot_status = "running" if bot_instance and not polling_task.done() else "stopped"
+    bot_status = "running" if bot_instance and polling_task and not polling_task.done() else "stopped"
     return {
         "status": "running",
         "message": "Telegram Ads Marketplace API is live! 🚀",
@@ -278,6 +279,7 @@ async def get_stats(db: Session = Depends(get_db)):
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
+        logger.error(f"Stats error: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
@@ -306,6 +308,7 @@ async def create_user(
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        logger.info(f"✅ User created: {telegram_id}")
         return new_user
     except Exception as e:
         db.rollback()
@@ -365,8 +368,7 @@ async def create_channel(channel_data: ChannelCreate, db: Session = Depends(get_
             logger.info(f"Creating new user for channel owner: {channel_data.owner_telegram_id}")
             owner = User(telegram_id=channel_data.owner_telegram_id)
             db.add(owner)
-            db.commit()
-            db.refresh(owner)
+            db.flush()  # Get owner.id without committing
         
         # Create channel
         new_channel = Channel(
