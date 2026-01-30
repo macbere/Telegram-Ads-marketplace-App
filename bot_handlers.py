@@ -1,6 +1,6 @@
 """
 bot_handlers.py - Command handlers for the Telegram bot
-NOW WITH ACTUAL DATABASE INTEGRATION!
+FINAL VERSION - Uses localhost, comprehensive error handling
 """
 
 from aiogram import Router, F
@@ -11,18 +11,22 @@ from aiogram.fsm.state import State, StatesGroup
 import requests
 import os
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
-# API base URL (your Render API)
+# API base URL - CRITICAL: Use localhost since bot and API run in same process
 PORT = os.getenv("PORT", "10000")
 API_URL = f"http://127.0.0.1:{PORT}"
+
+logger.info(f"🔗 Bot will call API at: {API_URL}")
+
 # Create router
 router = Router()
 
 
 # ============================================================================
-# FSM States for multi-step conversations
+# FSM States
 # ============================================================================
 
 class ChannelRegistration(StatesGroup):
@@ -40,22 +44,53 @@ class CampaignCreation(StatesGroup):
 # ============================================================================
 
 def call_api(method: str, endpoint: str, **kwargs):
-    """Helper function to call API with error handling"""
+    """Call API with comprehensive error handling"""
     try:
         url = f"{API_URL}{endpoint}"
-        logger.info(f"API Call: {method} {url}")
+        logger.info(f"🔗 API {method} {url}")
+        
+        if kwargs.get('json'):
+            logger.debug(f"📤 Payload: {json.dumps(kwargs['json'], indent=2)}")
         
         if method == "GET":
-            response = requests.get(url, params=kwargs.get('params'), timeout=10)
+            response = requests.get(
+                url,
+                params=kwargs.get('params'),
+                timeout=5  # Shorter timeout for localhost
+            )
         elif method == "POST":
-            response = requests.post(url, json=kwargs.get('json'), params=kwargs.get('params'), timeout=10)
+            response = requests.post(
+                url,
+                json=kwargs.get('json'),
+                params=kwargs.get('params'),
+                headers={'Content-Type': 'application/json'},
+                timeout=5
+            )
         else:
+            logger.error(f"❌ Unsupported method: {method}")
             return None
-            
+        
+        logger.info(f"📥 Response: {response.status_code}")
+        
+        if response.status_code >= 400:
+            logger.error(f"❌ API Error: {response.text}")
+        
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API Error: {e}")
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"⏱️ API timeout: {url}")
+        return None
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"🔌 Connection error: {e}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"❌ HTTP error: {e.response.status_code if e.response else 'unknown'}")
+        if e.response:
+            logger.error(f"Response body: {e.response.text[:500]}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}", exc_info=True)
         return None
 
 
@@ -65,12 +100,14 @@ def call_api(method: str, endpoint: str, **kwargs):
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    """Welcome message when user starts the bot"""
+    """Welcome message"""
     user_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name
     
-    # Register user in database via API
+    logger.info(f"👤 /start from user {user_id} (@{username})")
+    
+    # Register user
     result = call_api("POST", "/users/", params={
         "telegram_id": user_id,
         "username": username,
@@ -78,9 +115,10 @@ async def cmd_start(message: Message):
     })
     
     if result:
-        logger.info(f"✅ User registered: {user_id} (@{username})")
+        logger.info(f"✅ User registered: {user_id}")
+    else:
+        logger.warning(f"⚠️  User registration failed: {user_id}")
     
-    # Create inline keyboard
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="📢 I'm a Channel Owner", callback_data="role_channel_owner"),
@@ -103,7 +141,7 @@ Hi {first_name}! This bot connects:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    """Show help message with available commands"""
+    """Help message"""
     help_text = """
 📚 <b>Available Commands:</b>
 
@@ -150,12 +188,12 @@ async def cmd_stats(message: Message):
 
 
 # ============================================================================
-# CALLBACK HANDLERS (for inline buttons)
+# CALLBACK HANDLERS
 # ============================================================================
 
 @router.callback_query(F.data == "role_channel_owner")
 async def handle_channel_owner(callback: CallbackQuery):
-    """User selected Channel Owner role"""
+    """Channel Owner menu"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
         [InlineKeyboardButton(text="📋 My Channels", callback_data="my_channels")],
@@ -180,7 +218,7 @@ As a channel owner, you can:
 
 @router.callback_query(F.data == "role_advertiser")
 async def handle_advertiser(callback: CallbackQuery):
-    """User selected Advertiser role"""
+    """Advertiser menu"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
         [InlineKeyboardButton(text="➕ Create Campaign", callback_data="create_campaign")],
@@ -205,7 +243,7 @@ As an advertiser, you can:
 
 @router.callback_query(F.data == "add_channel")
 async def handle_add_channel(callback: CallbackQuery, state: FSMContext):
-    """Start channel registration process"""
+    """Start channel registration"""
     text = """
 ➕ <b>Add Your Channel</b>
 
@@ -228,7 +266,7 @@ This allows us to:
 
 @router.callback_query(F.data == "browse_channels")
 async def handle_browse_channels(callback: CallbackQuery):
-    """Show list of available channels"""
+    """Browse available channels"""
     channels = call_api("GET", "/channels/", params={"limit": 10})
     
     if channels is None:
@@ -266,19 +304,17 @@ Check back soon, or invite channel owners to join!
 
 
 # ============================================================================
-# MESSAGE HANDLERS (for forwarded messages, text input, etc)
+# MESSAGE HANDLERS
 # ============================================================================
 
 @router.message(ChannelRegistration.waiting_for_channel)
 async def process_channel_forward(message: Message, state: FSMContext):
-    """Process forwarded message from channel - NOW SAVES TO DATABASE!"""
+    """Process forwarded channel message"""
     
-    # Validate it's a forwarded message from a channel
     if not message.forward_origin:
         await message.answer("❌ Please forward a message from your channel.")
         return
     
-    # Get channel info from forward origin
     if hasattr(message.forward_origin, 'chat'):
         channel = message.forward_origin.chat
     else:
@@ -289,7 +325,8 @@ async def process_channel_forward(message: Message, state: FSMContext):
         await message.answer("❌ This is not a channel. Please forward from a channel.")
         return
     
-    # Store channel info in state
+    logger.info(f"📢 Channel detected: {channel.title} (ID: {channel.id})")
+    
     await state.update_data(
         channel_id=channel.id,
         channel_title=channel.title,
@@ -318,9 +355,9 @@ Repost: 30
 
 @router.message(ChannelRegistration.waiting_for_pricing)
 async def process_pricing(message: Message, state: FSMContext):
-    """Process channel pricing input - NOW ACTUALLY SAVES TO DATABASE!"""
+    """Process channel pricing and save to database"""
     
-    # Parse pricing from message
+    # Parse pricing
     pricing = {}
     lines = message.text.strip().split('\n')
     
@@ -338,10 +375,13 @@ async def process_pricing(message: Message, state: FSMContext):
         await message.answer("❌ Invalid pricing format. Please try again.\n\nExample:\nPost: 100\nStory: 50")
         return
     
-    # Get channel data from state
+    # Get channel data
     data = await state.get_data()
     
-    # 🔥 NOW WE ACTUALLY SAVE TO DATABASE VIA API!
+    logger.info(f"💾 Saving channel: {data['channel_title']}")
+    logger.info(f"📊 Pricing: {pricing}")
+    
+    # Save to database
     channel_data = {
         "owner_telegram_id": message.from_user.id,
         "telegram_channel_id": data['channel_id'],
@@ -354,7 +394,7 @@ async def process_pricing(message: Message, state: FSMContext):
     result = call_api("POST", "/channels/create", json=channel_data)
     
     if result:
-        logger.info(f"✅ Channel saved to database: {data['channel_title']}")
+        logger.info(f"✅ Channel saved: ID {result.get('id')}")
         
         text = f"""
 🎉 <b>Channel Listed Successfully!</b>
@@ -365,14 +405,17 @@ Pricing: {', '.join([f'{k.title()}: ${v}' for k, v in pricing.items()])}
 Your channel is now visible to advertisers!
 You'll be notified when someone wants to place an ad.
 
-Channel ID in database: #{result.get('id', 'unknown')}
+Channel ID: #{result.get('id', 'unknown')}
 """
     else:
         logger.error(f"❌ Failed to save channel: {data['channel_title']}")
         text = """
 ❌ <b>Error saving channel to database</b>
 
-Please try again later or contact support.
+The server is currently experiencing issues.
+Please try again in a few moments.
+
+If the problem persists, contact support.
 """
     
     await message.answer(text)
@@ -384,6 +427,6 @@ Please try again later or contact support.
 # ============================================================================
 
 def setup_handlers(dp):
-    """Register all handlers with the dispatcher"""
+    """Register all handlers"""
     dp.include_router(router)
     logger.info("✅ Router registered with dispatcher")
