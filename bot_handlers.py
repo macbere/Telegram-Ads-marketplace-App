@@ -1,6 +1,6 @@
 """
 bot_handlers.py - Command handlers for the Telegram bot
-FIXED: Async HTTP client to prevent event loop blocking
+FIXED: Proper error response parsing and user feedback
 """
 
 from aiogram import Router, F
@@ -70,15 +70,12 @@ async def close_http_session():
 
 async def call_api(method: str, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
     """
-    Async API caller - prevents event loop blocking
-    
-    Args:
-        method: HTTP method (GET, POST, etc.)
-        endpoint: API endpoint path
-        **kwargs: Additional arguments (json, params)
+    Async API caller with comprehensive error handling
     
     Returns:
-        JSON response or None on error
+        - Success: JSON response dict
+        - HTTP Error (4xx/5xx): {'error': True, 'status': int, 'detail': str}
+        - Network/Timeout: None
     """
     try:
         url = f"{API_URL}{endpoint}"
@@ -90,7 +87,6 @@ async def call_api(method: str, endpoint: str, **kwargs) -> Optional[Dict[str, A
         request_kwargs = {}
         if 'json' in kwargs:
             request_kwargs['json'] = kwargs['json']
-            logger.debug(f"📤 Payload: {json.dumps(kwargs['json'], indent=2)}")
         if 'params' in kwargs:
             request_kwargs['params'] = kwargs['params']
         
@@ -98,12 +94,23 @@ async def call_api(method: str, endpoint: str, **kwargs) -> Optional[Dict[str, A
         async with session.request(method, url, **request_kwargs) as response:
             logger.info(f"📥 Response: {response.status}")
             
-            if response.status >= 400:
-                error_text = await response.text()
-                logger.error(f"❌ API Error {response.status}: {error_text[:500]}")
-                return None
+            # Parse response body
+            try:
+                response_data = await response.json()
+            except:
+                response_data = await response.text()
             
-            return await response.json()
+            # Handle errors
+            if response.status >= 400:
+                error_detail = response_data.get('detail', str(response_data)) if isinstance(response_data, dict) else str(response_data)
+                logger.error(f"❌ API Error {response.status}: {error_detail}")
+                return {
+                    'error': True,
+                    'status': response.status,
+                    'detail': error_detail
+                }
+            
+            return response_data
         
     except aiohttp.ClientConnectionError as e:
         logger.error(f"🔌 Connection error: {e}")
@@ -136,7 +143,7 @@ async def cmd_start(message: Message):
         "first_name": first_name
     })
     
-    if result:
+    if result and not result.get('error'):
         logger.info(f"✅ User registered: {user_id}")
     else:
         logger.warning(f"⚠️  User registration failed: {user_id}")
@@ -193,7 +200,7 @@ async def cmd_stats(message: Message):
     """Show marketplace statistics"""
     data = await call_api("GET", "/stats")
     
-    if data:
+    if data and not data.get('error'):
         stats_text = f"""
 📊 <b>Marketplace Statistics</b>
 
@@ -291,7 +298,7 @@ async def handle_browse_channels(callback: CallbackQuery):
     """Browse available channels"""
     channels = await call_api("GET", "/channels/", params={"limit": 10})
     
-    if channels is None:
+    if channels is None or channels.get('error'):
         await callback.message.edit_text("❌ Error loading channels. Please try again.")
         await callback.answer()
         return
@@ -415,8 +422,46 @@ async def process_pricing(message: Message, state: FSMContext):
     
     result = await call_api("POST", "/channels/create", json=channel_data)
     
-    if result and result.get('id'):
-        logger.info(f"✅ Channel saved: ID {result['id']}")
+    # Handle response
+    if result is None:
+        # Network/timeout error
+        text = """
+❌ <b>Server Timeout</b>
+
+Could not connect to the server.
+Please try again in a few moments.
+
+If the problem persists, contact support.
+"""
+    elif result.get('error'):
+        # HTTP error (400, 500, etc.)
+        status = result.get('status')
+        detail = result.get('detail', 'Unknown error')
+        
+        if status == 400 and 'already registered' in detail.lower():
+            # Channel already exists - this is actually OK!
+            text = f"""
+ℹ️ <b>Channel Already Listed</b>
+
+<b>{data['channel_title']}</b> is already in the marketplace!
+
+Your channel is visible to advertisers and you can receive deal requests.
+
+Use /my_channels to view your channels.
+"""
+        else:
+            # Other error
+            text = f"""
+❌ <b>Error Saving Channel</b>
+
+Reason: {detail}
+
+Please try again or contact support if the issue persists.
+"""
+    else:
+        # Success!
+        channel_id = result.get('id', 'unknown')
+        logger.info(f"✅ Channel saved: ID {channel_id}")
         
         text = f"""
 🎉 <b>Channel Listed Successfully!</b>
@@ -427,19 +472,7 @@ Pricing: {', '.join([f'{k.title()}: ${v}' for k, v in pricing.items()])}
 Your channel is now visible to advertisers!
 You'll be notified when someone wants to place an ad.
 
-Channel ID: #{result['id']}
-"""
-    else:
-        logger.error(f"❌ Failed to save channel: {data['channel_title']}")
-        error_msg = result.get('detail', 'Unknown error') if result else 'Server timeout'
-        
-        text = f"""
-❌ <b>Error saving channel to database</b>
-
-Reason: {error_msg}
-
-Please try again in a few moments.
-If the problem persists, contact support.
+Channel ID: #{channel_id}
 """
     
     await message.answer(text)
