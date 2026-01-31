@@ -1,6 +1,6 @@
 """
 bot_handlers.py - Command handlers for the Telegram bot
-FIXED: Proper callback query handling with explicit routing
+FINAL FIX: Correct list handling in browse_channels
 """
 
 from aiogram import Router, F
@@ -12,11 +12,11 @@ import aiohttp
 import os
 import logging
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
-# API base URL - Use localhost since bot and API run in same process
+# API base URL
 PORT = os.getenv("PORT", "10000")
 API_URL = f"http://127.0.0.1:{PORT}"
 
@@ -68,14 +68,9 @@ async def close_http_session():
         logger.info("✅ HTTP session closed")
 
 
-async def call_api(method: str, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
+async def call_api(method: str, endpoint: str, **kwargs):
     """
-    Async API caller with comprehensive error handling
-    
-    Returns:
-        - Success: JSON response dict
-        - HTTP Error (4xx/5xx): {'error': True, 'status': int, 'detail': str}
-        - Network/Timeout: None
+    Async API caller - returns raw response (could be dict, list, or error dict)
     """
     try:
         url = f"{API_URL}{endpoint}"
@@ -110,17 +105,18 @@ async def call_api(method: str, endpoint: str, **kwargs) -> Optional[Dict[str, A
                     'detail': error_detail
                 }
             
+            # Return raw response (could be list or dict)
             return response_data
         
     except aiohttp.ClientConnectionError as e:
         logger.error(f"🔌 Connection error: {e}")
-        return None
+        return {'error': True, 'detail': 'Connection error'}
     except aiohttp.ClientTimeout:
         logger.error(f"⏱️ Request timeout: {url}")
-        return None
+        return {'error': True, 'detail': 'Request timeout'}
     except Exception as e:
         logger.error(f"❌ Unexpected error: {e}", exc_info=True)
-        return None
+        return {'error': True, 'detail': str(e)}
 
 
 # ============================================================================
@@ -136,17 +132,15 @@ async def cmd_start(message: Message):
     
     logger.info(f"👤 /start from user {user_id} (@{username})")
     
-    # Register user (async)
+    # Register user
     result = await call_api("POST", "/users/", params={
         "telegram_id": user_id,
         "username": username,
         "first_name": first_name
     })
     
-    if result and not result.get('error'):
+    if result and not isinstance(result, dict) or not result.get('error'):
         logger.info(f"✅ User registered: {user_id}")
-    else:
-        logger.warning(f"⚠️  User registration failed: {user_id}")
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -200,16 +194,16 @@ async def cmd_stats(message: Message):
     """Show marketplace statistics"""
     data = await call_api("GET", "/stats")
     
-    if data and not data.get('error'):
+    if isinstance(data, dict) and not data.get('error'):
         stats_text = f"""
 📊 <b>Marketplace Statistics</b>
 
-👥 Total Users: {data['total_users']}
-📢 Listed Channels: {data['total_channels']}
-🤝 Total Deals: {data['total_deals']}
-⚡ Active Deals: {data['active_deals']}
+👥 Total Users: {data.get('total_users', 0)}
+📢 Listed Channels: {data.get('total_channels', 0)}
+🤝 Total Deals: {data.get('total_deals', 0)}
+⚡ Active Deals: {data.get('active_deals', 0)}
 
-<i>Last updated: {data['timestamp'][:19]}</i>
+<i>Last updated: {data.get('timestamp', '')[:19]}</i>
 """
         await message.answer(stats_text)
     else:
@@ -217,7 +211,7 @@ async def cmd_stats(message: Message):
 
 
 # ============================================================================
-# CALLBACK HANDLERS - EXPLICIT ROUTING
+# CALLBACK HANDLERS
 # ============================================================================
 
 @router.callback_query(F.data == "role_channel_owner")
@@ -301,18 +295,25 @@ This allows us to:
 
 @router.callback_query(F.data == "browse_channels")
 async def handle_browse_channels(callback: CallbackQuery):
-    """Browse available channels"""
+    """Browse available channels - FIXED VERSION"""
     logger.info(f"📞 Callback: browse_channels from user {callback.from_user.id}")
     
+    # Call API to get channels
     channels = await call_api("GET", "/channels/", params={"limit": 10})
     
-    if channels is None or channels.get('error'):
-        logger.error("Failed to fetch channels from API")
+    logger.info(f"🔍 API Response type: {type(channels)}")
+    logger.info(f"🔍 API Response: {channels}")
+    
+    # Check if it's an error dict
+    if isinstance(channels, dict) and channels.get('error'):
+        logger.error(f"❌ API returned error: {channels.get('detail')}")
         await callback.message.edit_text("❌ Error loading channels. Please try again.")
         await callback.answer()
         return
     
-    if not channels or len(channels) == 0:
+    # Check if it's an empty list or None
+    if not channels or (isinstance(channels, list) and len(channels) == 0):
+        logger.warning("⚠️ No channels found in database")
         text = """
 😔 <b>No Channels Available Yet</b>
 
@@ -323,22 +324,34 @@ Check back soon, or invite channel owners to join!
         await callback.answer()
         return
     
-    logger.info(f"📊 Found {len(channels)} channels")
+    # Channels found! Build the response
+    logger.info(f"✅ Found {len(channels)} channels")
     
     text = "📢 <b>Available Channels:</b>\n\n"
     
     for channel in channels:
+        logger.info(f"Processing channel: {channel.get('channel_title')}")
+        
         pricing = channel.get('pricing', {})
         post_price = pricing.get('post', 'N/A')
+        story_price = pricing.get('story', 'N/A')
+        repost_price = pricing.get('repost', 'N/A')
         
         text += f"""
-<b>{channel['channel_title']}</b>
+<b>{channel.get('channel_title', 'Unknown Channel')}</b>
+@{channel.get('channel_username', 'private')}
 👥 Subscribers: {channel.get('subscribers', 0):,}
 👁 Avg Views: {channel.get('avg_views', 0):,}
-💰 Post Price: ${post_price}
+
+💰 <b>Pricing:</b>
+  • Post: ${post_price}
+  • Story: ${story_price}
+  • Repost: ${repost_price}
+
 ━━━━━━━━━━━━━━━━
 """
     
+    logger.info(f"📝 Sending response with {len(channels)} channels")
     await callback.message.edit_text(text)
     await callback.answer()
 
@@ -457,7 +470,7 @@ async def process_pricing(message: Message, state: FSMContext):
     logger.info(f"💾 Saving channel: {data['channel_title']}")
     logger.info(f"📊 Pricing: {pricing}")
     
-    # Save to database via async API call
+    # Save to database
     channel_data = {
         "owner_telegram_id": message.from_user.id,
         "telegram_channel_id": data['channel_id'],
@@ -470,23 +483,11 @@ async def process_pricing(message: Message, state: FSMContext):
     result = await call_api("POST", "/channels/create", json=channel_data)
     
     # Handle response
-    if result is None:
-        # Network/timeout error
-        text = """
-❌ <b>Server Timeout</b>
-
-Could not connect to the server.
-Please try again in a few moments.
-
-If the problem persists, contact support.
-"""
-    elif result.get('error'):
-        # HTTP error (400, 500, etc.)
+    if isinstance(result, dict) and result.get('error'):
         status = result.get('status')
         detail = result.get('detail', 'Unknown error')
         
         if status == 400 and 'already registered' in detail.lower():
-            # Channel already exists - this is actually OK!
             text = f"""
 ℹ️ <b>Channel Already Listed</b>
 
@@ -497,7 +498,6 @@ Your channel is visible to advertisers and you can receive deal requests.
 Use /my_channels to view your channels.
 """
         else:
-            # Other error
             text = f"""
 ❌ <b>Error Saving Channel</b>
 
@@ -505,9 +505,8 @@ Reason: {detail}
 
 Please try again or contact support if the issue persists.
 """
-    else:
-        # Success!
-        channel_id = result.get('id', 'unknown')
+    elif isinstance(result, dict) and result.get('id'):
+        channel_id = result['id']
         logger.info(f"✅ Channel saved: ID {channel_id}")
         
         text = f"""
@@ -520,6 +519,12 @@ Your channel is now visible to advertisers!
 You'll be notified when someone wants to place an ad.
 
 Channel ID: #{channel_id}
+"""
+    else:
+        text = """
+❌ <b>Server Error</b>
+
+Could not save channel. Please try again.
 """
     
     await message.answer(text)
