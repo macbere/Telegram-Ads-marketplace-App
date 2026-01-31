@@ -1,6 +1,6 @@
 """
 main.py - Combined FastAPI + Telegram Bot
-FINAL VERSION - Async HTTP, proper cleanup, no deadlocks
+FINAL FIX: Force webhook deletion with retry logic
 """
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -43,42 +43,52 @@ dp = None
 polling_task = None
 
 
-async def wait_for_telegram_release():
-    """Wait for Telegram to release any existing polling connections"""
-    logger.info("⏳ Waiting for Telegram to release any existing connections...")
-    await asyncio.sleep(5)
-    logger.info("✅ Wait complete")
-
-
-async def cleanup_webhook():
-    """Force delete webhook and wait for Telegram to process"""
-    temp_bot = Bot(token=BOT_TOKEN)
-    try:
-        logger.info("🔍 Checking for existing webhook...")
-        webhook_info = await temp_bot.get_webhook_info()
-        
-        if webhook_info.url:
-            logger.warning(f"⚠️  Found active webhook: {webhook_info.url}")
-            logger.info("🧹 Deleting webhook...")
+async def aggressive_webhook_cleanup():
+    """
+    Aggressively delete webhook with multiple retries
+    This ensures old connections are terminated
+    """
+    logger.info("🔥 AGGRESSIVE WEBHOOK CLEANUP")
+    
+    for attempt in range(5):  # Try 5 times
+        temp_bot = Bot(token=BOT_TOKEN)
+        try:
+            logger.info(f"Attempt {attempt + 1}/5: Checking webhook...")
+            webhook_info = await temp_bot.get_webhook_info()
             
-            result = await temp_bot.delete_webhook(drop_pending_updates=True)
-            
-            if result:
-                logger.info("✅ Webhook deleted successfully")
-                logger.info("⏳ Waiting 10 seconds for Telegram to process...")
-                await asyncio.sleep(10)
+            if webhook_info.url:
+                logger.warning(f"⚠️  Active webhook found: {webhook_info.url}")
             else:
-                logger.error("❌ Webhook deletion failed")
-                raise Exception("Failed to delete webhook")
-        else:
-            logger.info("✅ No webhook found")
-            await wait_for_telegram_release()
+                logger.info("✅ No webhook found")
             
-    except Exception as e:
-        logger.error(f"❌ Error during webhook cleanup: {e}")
-        await wait_for_telegram_release()
-    finally:
-        await temp_bot.session.close()
+            # Delete webhook regardless
+            logger.info("🧹 Deleting webhook (forced)...")
+            await temp_bot.delete_webhook(drop_pending_updates=True)
+            await asyncio.sleep(3)
+            
+            # Verify deletion
+            verify = await temp_bot.get_webhook_info()
+            if not verify.url:
+                logger.info("✅ Webhook confirmed deleted")
+                break
+            else:
+                logger.warning(f"⚠️  Webhook still active after attempt {attempt + 1}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error on attempt {attempt + 1}: {e}")
+        finally:
+            await temp_bot.session.close()
+        
+        # Wait between attempts
+        if attempt < 4:
+            wait_time = (attempt + 1) * 3
+            logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
+            await asyncio.sleep(wait_time)
+    
+    # Final wait to ensure Telegram releases connection
+    logger.info("⏳ Final 10-second wait for Telegram to release connection...")
+    await asyncio.sleep(10)
+    logger.info("✅ Cleanup complete")
 
 
 async def verify_bot_connection():
@@ -104,9 +114,9 @@ async def start_bot():
         logger.info("🤖 TELEGRAM BOT STARTUP SEQUENCE")
         logger.info("=" * 60)
         
-        # Step 1: Cleanup webhook
-        logger.info("STEP 1: Webhook Cleanup")
-        await cleanup_webhook()
+        # Step 1: Aggressive webhook cleanup
+        logger.info("STEP 1: Aggressive Webhook Cleanup")
+        await aggressive_webhook_cleanup()
         
         # Step 2: Verify connection
         logger.info("STEP 2: Connection Verification")
@@ -368,7 +378,7 @@ async def create_channel(channel_data: ChannelCreate, db: Session = Depends(get_
             logger.info(f"Creating new user for channel owner: {channel_data.owner_telegram_id}")
             owner = User(telegram_id=channel_data.owner_telegram_id)
             db.add(owner)
-            db.flush()  # Get owner.id without committing
+            db.flush()
         
         # Create channel
         new_channel = Channel(
