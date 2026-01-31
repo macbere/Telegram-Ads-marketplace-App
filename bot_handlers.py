@@ -1,6 +1,6 @@
 """
 bot_handlers.py - Command handlers for the Telegram bot
-FIXED: Proper error response parsing and user feedback
+FIXED: Proper callback query handling with explicit routing
 """
 
 from aiogram import Router, F
@@ -25,7 +25,7 @@ logger.info(f"🔗 Bot will call API at: {API_URL}")
 # Create router
 router = Router()
 
-# Shared aiohttp session (initialized in setup_handlers)
+# Shared aiohttp session
 http_session: Optional[aiohttp.ClientSession] = None
 
 
@@ -217,12 +217,14 @@ async def cmd_stats(message: Message):
 
 
 # ============================================================================
-# CALLBACK HANDLERS
+# CALLBACK HANDLERS - EXPLICIT ROUTING
 # ============================================================================
 
 @router.callback_query(F.data == "role_channel_owner")
 async def handle_channel_owner(callback: CallbackQuery):
     """Channel Owner menu"""
+    logger.info(f"📞 Callback: role_channel_owner from user {callback.from_user.id}")
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
         [InlineKeyboardButton(text="📋 My Channels", callback_data="my_channels")],
@@ -248,6 +250,8 @@ As a channel owner, you can:
 @router.callback_query(F.data == "role_advertiser")
 async def handle_advertiser(callback: CallbackQuery):
     """Advertiser menu"""
+    logger.info(f"📞 Callback: role_advertiser from user {callback.from_user.id}")
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
         [InlineKeyboardButton(text="➕ Create Campaign", callback_data="create_campaign")],
@@ -273,6 +277,8 @@ As an advertiser, you can:
 @router.callback_query(F.data == "add_channel")
 async def handle_add_channel(callback: CallbackQuery, state: FSMContext):
     """Start channel registration"""
+    logger.info(f"📞 Callback: add_channel from user {callback.from_user.id}")
+    
     text = """
 ➕ <b>Add Your Channel</b>
 
@@ -296,14 +302,17 @@ This allows us to:
 @router.callback_query(F.data == "browse_channels")
 async def handle_browse_channels(callback: CallbackQuery):
     """Browse available channels"""
+    logger.info(f"📞 Callback: browse_channels from user {callback.from_user.id}")
+    
     channels = await call_api("GET", "/channels/", params={"limit": 10})
     
     if channels is None or channels.get('error'):
+        logger.error("Failed to fetch channels from API")
         await callback.message.edit_text("❌ Error loading channels. Please try again.")
         await callback.answer()
         return
     
-    if not channels:
+    if not channels or len(channels) == 0:
         text = """
 😔 <b>No Channels Available Yet</b>
 
@@ -313,6 +322,8 @@ Check back soon, or invite channel owners to join!
         await callback.message.edit_text(text)
         await callback.answer()
         return
+    
+    logger.info(f"📊 Found {len(channels)} channels")
     
     text = "📢 <b>Available Channels:</b>\n\n"
     
@@ -329,6 +340,42 @@ Check back soon, or invite channel owners to join!
 """
     
     await callback.message.edit_text(text)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "my_channels")
+async def handle_my_channels(callback: CallbackQuery):
+    """Show user's channels (placeholder)"""
+    logger.info(f"📞 Callback: my_channels from user {callback.from_user.id}")
+    
+    await callback.message.edit_text("📋 <b>My Channels</b>\n\nThis feature is coming soon!")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "my_deals")
+async def handle_my_deals(callback: CallbackQuery):
+    """Show user's deals (placeholder)"""
+    logger.info(f"📞 Callback: my_deals from user {callback.from_user.id}")
+    
+    await callback.message.edit_text("🤝 <b>My Deals</b>\n\nThis feature is coming soon!")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "create_campaign")
+async def handle_create_campaign(callback: CallbackQuery):
+    """Create campaign (placeholder)"""
+    logger.info(f"📞 Callback: create_campaign from user {callback.from_user.id}")
+    
+    await callback.message.edit_text("➕ <b>Create Campaign</b>\n\nThis feature is coming soon!")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "my_campaigns")
+async def handle_my_campaigns(callback: CallbackQuery):
+    """Show user's campaigns (placeholder)"""
+    logger.info(f"📞 Callback: my_campaigns from user {callback.from_user.id}")
+    
+    await callback.message.edit_text("📋 <b>My Campaigns</b>\n\nThis feature is coming soon!")
     await callback.answer()
 
 
@@ -487,6 +534,10 @@ def setup_handlers(dp):
     """Register all handlers"""
     dp.include_router(router)
     logger.info("✅ Router registered with dispatcher")
+    logger.info("📝 Registered handlers:")
+    logger.info("  - Commands: /start, /help, /stats")
+    logger.info("  - Callbacks: role_channel_owner, role_advertiser, add_channel, browse_channels")
+    logger.info("  - FSM: ChannelRegistration states")
 
 
 async def shutdown_handlers():
