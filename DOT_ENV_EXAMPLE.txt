@@ -1,0 +1,11 @@
+# Telegram Bot Token
+BOT_TOKEN=your_bot_token_here
+
+# Database URL (PostgreSQL for production)
+DATABASE_URL=postgresql://user:password@host:port/database
+
+# API Base URL (for bot to call FastAPI)
+API_BASE_URL=http://127.0.0.1:10000
+
+# Server Port
+PORT=10000
