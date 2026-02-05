@@ -1,8 +1,8 @@
 """
-Database models for Telegram Ads Marketplace
+Database models for Telegram Ads Marketplace - FIXED for large Telegram IDs
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, ForeignKey, Boolean, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, ForeignKey, Boolean, Text, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -15,7 +15,7 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    telegram_id = Column(Integer, unique=True, index=True, nullable=False)
+    telegram_id = Column(BigInteger, unique=True, index=True, nullable=False)  # FIXED: BigInteger
     username = Column(String, nullable=True)
     first_name = Column(String, nullable=True)
     is_channel_owner = Column(Boolean, default=False)
@@ -34,7 +34,7 @@ class Channel(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    telegram_channel_id = Column(Integer, unique=True, index=True, nullable=False)
+    telegram_channel_id = Column(BigInteger, unique=True, index=True, nullable=False)  # FIXED: BigInteger
     channel_title = Column(String, nullable=False)
     channel_username = Column(String, nullable=True)
     subscribers = Column(Integer, default=0)
@@ -103,7 +103,7 @@ class Post(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
-    telegram_post_id = Column(Integer, nullable=False)
+    telegram_post_id = Column(BigInteger, nullable=False)  # FIXED: BigInteger
     post_url = Column(String, nullable=False)
     posted_at = Column(DateTime, default=datetime.utcnow)
     views = Column(Integer, default=0)
