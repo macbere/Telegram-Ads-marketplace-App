@@ -1,5 +1,5 @@
 """
-Bot initialization and management
+Bot initialization and management - WITH PERSISTENT MENU
 """
 
 import logging
@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeDefault
 
 # Import handlers
 import bot_handlers
@@ -32,6 +33,18 @@ dp = Dispatcher(storage=MemoryStorage())
 
 # Global flag for polling task
 _polling_task = None
+
+
+async def set_bot_commands():
+    """Set bot commands menu (the menu button in Telegram)"""
+    commands = [
+        BotCommand(command="start", description="🏠 Main Menu"),
+        BotCommand(command="help", description="❓ Help & Instructions"),
+        BotCommand(command="stats", description="📊 Marketplace Statistics"),
+    ]
+    
+    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    logger.info("✅ Bot commands menu set")
 
 
 async def start_bot():
@@ -89,13 +102,20 @@ async def start_bot():
         logger.error(f"❌ Failed to verify bot: {e}")
         raise
     
-    # Step 3: Register handlers
-    logger.info("STEP 3: Bot Initialization")
+    # Step 3: Set bot commands menu
+    logger.info("STEP 3: Setting Bot Commands Menu")
+    try:
+        await set_bot_commands()
+    except Exception as e:
+        logger.error(f"❌ Failed to set commands: {e}")
+    
+    # Step 4: Register handlers
+    logger.info("STEP 4: Bot Initialization")
     bot_handlers.setup_handlers(dp)
     logger.info("✅ Bot and dispatcher initialized")
     
-    # Step 4: Start polling
-    logger.info("STEP 4: Starting Polling")
+    # Step 5: Start polling
+    logger.info("STEP 5: Starting Polling")
     logger.info("🎧 Bot is now listening for messages...")
     logger.info("============================================================")
     
