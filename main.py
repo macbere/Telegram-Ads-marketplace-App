@@ -33,13 +33,16 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database tables created/verified")
     
-    # Start bot
-    await bot.start_bot()
+    # Start bot in background
+    import asyncio
+    bot_task = asyncio.create_task(bot.start_bot())
     
     yield
     
     # Shutdown
     await bot.stop_bot()
+    if not bot_task.done():
+        bot_task.cancel()
     logger.info("👋 Application stopped")
 
 
@@ -501,10 +504,18 @@ async def get_deal(deal_id: int, db: Session = Depends(get_db)):
 
 
 # ============================================================================
-# RUN SERVER
+# RUN SERVER - FIXED FOR RENDER
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 10000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    
+    # CRITICAL FOR RENDER: Must bind to 0.0.0.0
+    logger.info(f"🚀 Starting server on port {port}...")
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",  # MUST BE 0.0.0.0 for Render
+        port=port,
+        reload=False  # Disable reload in production
+    )
