@@ -1,14 +1,15 @@
 """
-Telegram Bot Handlers - Complete with Purchase Flow
+Telegram Bot Handlers - Complete with Purchase Flow + Admin Verification
 Handles all bot interactions including purchases, payments, and order management
 """
 
 import logging
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
 import aiohttp
 import os
 from datetime import datetime
@@ -68,6 +69,52 @@ async def api_request(method: str, endpoint: str, **kwargs):
     except Exception as e:
         logger.error(f"❌ Request failed: {e}")
         return {"error": str(e)}
+
+
+async def check_bot_admin_status(bot: Bot, channel_id: int) -> dict:
+    """
+    Check if bot is admin in the channel
+    Returns: {"is_admin": bool, "can_post": bool, "error": str or None}
+    """
+    try:
+        # Get bot's member status in the channel
+        bot_member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
+        
+        # Check if bot is admin or creator
+        is_admin = bot_member.status in ["administrator", "creator"]
+        
+        # Check if bot has posting rights (for administrators)
+        can_post = False
+        if bot_member.status == "creator":
+            can_post = True
+        elif bot_member.status == "administrator":
+            # Check if bot can post messages
+            can_post = bot_member.can_post_messages if hasattr(bot_member, 'can_post_messages') else False
+        
+        return {
+            "is_admin": is_admin,
+            "can_post": can_post,
+            "status": bot_member.status,
+            "error": None
+        }
+    
+    except TelegramBadRequest as e:
+        # Bot is not in the channel or has no access
+        logger.warning(f"Bot access check failed for channel {channel_id}: {e}")
+        return {
+            "is_admin": False,
+            "can_post": False,
+            "status": "not_member",
+            "error": str(e)
+        }
+    except Exception as e:
+        logger.error(f"Error checking bot admin status: {e}")
+        return {
+            "is_admin": False,
+            "can_post": False,
+            "status": "error",
+            "error": str(e)
+        }
 
 
 def create_main_menu_keyboard(is_owner=False, is_advertiser=False):
@@ -183,8 +230,8 @@ async def cmd_stats(message: Message):
         f"📊 **Marketplace Statistics**\n\n"
         f"👥 Total Users: {stats.get('total_users', 0)}\n"
         f"📢 Active Channels: {stats.get('total_channels', 0)}\n"
-        f"💼 Total Deals: {stats.get('total_deals', 0)}\n"
-        f"🔥 Active Deals: {stats.get('active_deals', 0)}"
+        f"💼 Total Orders: {stats.get('total_orders', 0)}\n"
+        f"🔥 Active Orders: {stats.get('active_orders', 0)}"
     )
     
     await message.answer(stats_text, parse_mode="Markdown")
@@ -251,7 +298,7 @@ async def callback_role_advertiser(callback: CallbackQuery):
 
 
 # ============================================================================
-# CHANNEL MANAGEMENT
+# CHANNEL MANAGEMENT - WITH ADMIN VERIFICATION
 # ============================================================================
 
 @router.callback_query(F.data == "add_channel")
@@ -259,8 +306,11 @@ async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
     """Start channel registration flow"""
     await callback.message.edit_text(
         "📢 **Add Your Channel**\n\n"
-        "Please forward a message from your channel to register it.\n\n"
-        "Make sure the bot is an admin in your channel!",
+        "**IMPORTANT:** Before proceeding:\n"
+        "1️⃣ Add this bot as an **Administrator** to your channel\n"
+        "2️⃣ Give it permission to **Post Messages**\n"
+        "3️⃣ Then forward a message from your channel\n\n"
+        "⚠️ The bot will verify it has admin access before registration!",
         parse_mode="Markdown"
     )
     await state.set_state(ChannelRegistration.waiting_for_forward)
@@ -268,8 +318,8 @@ async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
-async def process_channel_forward(message: Message, state: FSMContext):
-    """Process forwarded message from channel"""
+async def process_channel_forward(message: Message, state: FSMContext, bot: Bot):
+    """Process forwarded message from channel - WITH ADMIN CHECK"""
     if not message.forward_from_chat:
         await message.answer("❌ Please forward a message from your channel.")
         return
@@ -278,17 +328,61 @@ async def process_channel_forward(message: Message, state: FSMContext):
         await message.answer("❌ This is not a channel. Please forward from a channel.")
         return
     
+    channel_id = message.forward_from_chat.id
+    channel_title = message.forward_from_chat.title
+    channel_username = message.forward_from_chat.username
+    
+    # CHECK BOT ADMIN STATUS
+    logger.info(f"🔍 Checking bot admin status for channel {channel_id}")
+    admin_check = await check_bot_admin_status(bot, channel_id)
+    
+    if not admin_check["is_admin"]:
+        # Bot is NOT admin
+        await message.answer(
+            f"❌ **Bot Not Admin in Channel**\n\n"
+            f"I'm not an administrator in **{channel_title}**!\n\n"
+            f"**Please do this:**\n"
+            f"1. Go to your channel settings\n"
+            f"2. Add @{(await bot.get_me()).username} as Administrator\n"
+            f"3. Enable 'Post Messages' permission\n"
+            f"4. Try forwarding a message again\n\n"
+            f"⚠️ I need admin access to post ads to your channel!",
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        return
+    
+    if not admin_check["can_post"]:
+        # Bot is admin but can't post
+        await message.answer(
+            f"⚠️ **Missing Posting Permission**\n\n"
+            f"I'm an admin in **{channel_title}**, but I don't have permission to post messages!\n\n"
+            f"**Please do this:**\n"
+            f"1. Go to channel settings → Administrators\n"
+            f"2. Click on @{(await bot.get_me()).username}\n"
+            f"3. Enable **'Post Messages'** permission\n"
+            f"4. Try forwarding a message again",
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        return
+    
+    # ✅ BOT IS ADMIN WITH POSTING RIGHTS!
+    logger.info(f"✅ Bot verified as admin in channel {channel_id}")
+    
     # Store channel info
     await state.update_data(
-        channel_id=message.forward_from_chat.id,
-        channel_title=message.forward_from_chat.title,
-        channel_username=message.forward_from_chat.username
+        channel_id=channel_id,
+        channel_title=channel_title,
+        channel_username=channel_username
     )
     
     await message.answer(
-        f"✅ **Channel Detected:**\n\n"
-        f"📢 {message.forward_from_chat.title}\n"
-        f"🔗 @{message.forward_from_chat.username or 'Private Channel'}\n\n"
+        f"✅ **Channel Verified!**\n\n"
+        f"📢 {channel_title}\n"
+        f"🔗 @{channel_username or 'Private Channel'}\n"
+        f"🤖 Bot has admin access ✓\n"
+        f"📝 Can post messages ✓\n\n"
         f"💰 **Set Your Pricing**\n\n"
         f"Please send your prices in this format:\n"
         f"`Post: 100\nStory: 50\nRepost: 25`\n\n"
@@ -355,6 +449,8 @@ async def process_channel_pricing(message: Message, state: FSMContext):
                 f"🎉 **Channel Listed Successfully!**\n\n"
                 f"📢 Channel: {data['channel_title']}\n"
                 f"💰 Pricing:\n{pricing_text}\n\n"
+                f"✅ Bot verified as admin\n"
+                f"✅ Ready to receive orders\n\n"
                 f"Your channel is now visible to advertisers!\n"
                 f"Channel ID: #{result.get('id')}",
                 parse_mode="Markdown"
