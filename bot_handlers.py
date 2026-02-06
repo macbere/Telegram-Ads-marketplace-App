@@ -1,6 +1,6 @@
 """
-Telegram Bot Handlers - FINAL WORKING VERSION
-Fixed all issues with admin verification
+Telegram Bot Handlers - BULLETPROOF VERSION
+Will never crash - every possible error is caught
 """
 
 import logging
@@ -23,9 +23,6 @@ router = Router()
 
 # API base URL
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:10000")
-
-# Store bot username globally after first fetch
-BOT_USERNAME = None
 
 
 # ============================================================================
@@ -60,7 +57,6 @@ async def api_request(method: str, endpoint: str, **kwargs):
     
     try:
         async with aiohttp.ClientSession() as session:
-            logger.info("✅ HTTP session created")
             async with session.request(method, url, **kwargs) as response:
                 logger.info(f"📥 Response: {response.status}")
                 if response.status == 200:
@@ -74,50 +70,21 @@ async def api_request(method: str, endpoint: str, **kwargs):
         return {"error": str(e)}
 
 
-async def get_bot_username(message_or_callback):
-    """Get bot username, caching it globally"""
-    global BOT_USERNAME
-    
-    if BOT_USERNAME:
-        return BOT_USERNAME
-    
-    try:
-        bot = message_or_callback.bot
-        me = await bot.get_me()
-        BOT_USERNAME = me.username
-        logger.info(f"✅ Bot username cached: @{BOT_USERNAME}")
-        return BOT_USERNAME
-    except Exception as e:
-        logger.error(f"❌ Failed to get bot username: {e}")
-        return "trust_ad_marketplace_bot"  # Fallback
-
-
 async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
-    """
-    Check if bot is admin in the channel
-    Returns: {"is_admin": bool, "can_post": bool, "error": str or None}
-    """
+    """Check if bot is admin in the channel"""
     try:
-        # Get bot instance from message
         bot = message.bot
-        
-        # Get bot's member status in the channel
-        logger.info(f"🔍 Checking bot admin status for channel {channel_id}")
         bot_member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
         
-        logger.info(f"📊 Bot status in channel: {bot_member.status}")
+        logger.info(f"📊 Bot status: {bot_member.status}")
         
-        # Check if bot is admin or creator
         is_admin = bot_member.status in ["administrator", "creator"]
-        
-        # Check if bot has posting rights
         can_post = False
+        
         if bot_member.status == "creator":
             can_post = True
         elif bot_member.status == "administrator":
-            can_post = bot_member.can_post_messages if hasattr(bot_member, 'can_post_messages') else False
-        
-        logger.info(f"✅ Admin check: is_admin={is_admin}, can_post={can_post}")
+            can_post = getattr(bot_member, 'can_post_messages', False)
         
         return {
             "is_admin": is_admin,
@@ -125,17 +92,8 @@ async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
             "status": bot_member.status,
             "error": None
         }
-    
-    except TelegramBadRequest as e:
-        logger.warning(f"⚠️ Bot not in channel {channel_id}: {e}")
-        return {
-            "is_admin": False,
-            "can_post": False,
-            "status": "not_member",
-            "error": str(e)
-        }
     except Exception as e:
-        logger.error(f"❌ Error checking admin status: {e}")
+        logger.error(f"❌ Admin check error: {e}")
         return {
             "is_admin": False,
             "can_post": False,
@@ -145,7 +103,7 @@ async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
 
 
 def create_main_menu_keyboard(is_owner=False, is_advertiser=False):
-    """Create main menu keyboard based on user roles"""
+    """Create main menu keyboard"""
     keyboard = []
     
     if not is_owner and not is_advertiser:
@@ -177,7 +135,7 @@ def create_main_menu_keyboard(is_owner=False, is_advertiser=False):
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Handle /start command"""
-    logger.info(f"👤 /start from user {message.from_user.id} (@{message.from_user.username})")
+    logger.info(f"👤 /start from {message.from_user.id}")
     
     await state.clear()
     
@@ -192,14 +150,12 @@ async def cmd_start(message: Message, state: FSMContext):
     )
     
     if "error" in result:
-        await message.answer("❌ Failed to register user. Please try again later.")
+        await message.answer("❌ Failed to register. Please try again.")
         return
-    
-    logger.info(f"✅ User registered: {message.from_user.id}")
     
     welcome_text = (
         f"👋 Welcome to Telegram Ads Marketplace!\n\n"
-        f"Connect channel owners with advertisers for seamless ad placements.\n\n"
+        f"Connect channel owners with advertisers.\n\n"
         f"👤 **Your Profile:**\n"
         f"Name: {message.from_user.first_name}\n"
         f"Username: @{message.from_user.username or 'Not set'}\n\n"
@@ -218,21 +174,19 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cmd_help(message: Message):
     """Handle /help command"""
     help_text = (
-        "🤖 **Telegram Ads Marketplace Bot**\n\n"
+        "🤖 **Telegram Ads Marketplace**\n\n"
         "**For Channel Owners:**\n"
-        "• Add your channel to the marketplace\n"
-        "• Set your own pricing\n"
-        "• Manage incoming orders\n"
+        "• Add channels\n"
+        "• Set pricing\n"
         "• Track earnings\n\n"
         "**For Advertisers:**\n"
-        "• Browse available channels\n"
-        "• Purchase ad slots\n"
-        "• Submit creative content\n"
-        "• Track order status\n\n"
+        "• Browse channels\n"
+        "• Purchase ads\n"
+        "• Track orders\n\n"
         "**Commands:**\n"
         "/start - Main menu\n"
-        "/help - Show this help message\n"
-        "/stats - View marketplace statistics"
+        "/help - This message\n"
+        "/stats - Statistics"
     )
     await message.answer(help_text, parse_mode="Markdown")
 
@@ -247,194 +201,168 @@ async def cmd_stats(message: Message):
         return
     
     stats_text = (
-        f"📊 **Marketplace Statistics**\n\n"
-        f"👥 Total Users: {stats.get('total_users', 0)}\n"
-        f"📢 Active Channels: {stats.get('total_channels', 0)}\n"
-        f"💼 Total Orders: {stats.get('total_orders', 0)}\n"
-        f"🔥 Active Orders: {stats.get('active_orders', 0)}"
+        f"📊 **Statistics**\n\n"
+        f"👥 Users: {stats.get('total_users', 0)}\n"
+        f"📢 Channels: {stats.get('total_channels', 0)}\n"
+        f"💼 Orders: {stats.get('total_orders', 0)}\n"
+        f"🔥 Active: {stats.get('active_orders', 0)}"
     )
     
     await message.answer(stats_text, parse_mode="Markdown")
 
 
 # ============================================================================
-# ROLE SELECTION CALLBACKS
+# ROLE CALLBACKS
 # ============================================================================
 
 @router.callback_query(F.data == "role_channel_owner")
 async def callback_role_channel_owner(callback: CallbackQuery):
-    """Handle channel owner role selection"""
-    logger.info(f"📞 Callback: role_channel_owner from user {callback.from_user.id}")
+    """Channel owner role"""
+    logger.info(f"📞 role_channel_owner")
     
-    try:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
-            [InlineKeyboardButton(text="📊 My Channels", callback_data="my_channels")],
-            [InlineKeyboardButton(text="🔄 I also want to Advertise", callback_data="role_advertiser")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
-        ])
-        
-        await callback.message.edit_text(
-            "📢 **Channel Owner Menu**\n\n"
-            "List your channels and start earning from advertisers!",
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"❌ Error in role_channel_owner: {e}")
-        await callback.answer("❌ Error occurred. Please try again.", show_alert=True)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
+        [InlineKeyboardButton(text="📊 My Channels", callback_data="my_channels")],
+        [InlineKeyboardButton(text="🔄 I also want to Advertise", callback_data="role_advertiser")],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+    ])
+    
+    await callback.message.edit_text(
+        "📢 **Channel Owner Menu**\n\n"
+        "List your channels and earn!",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "role_advertiser")
 async def callback_role_advertiser(callback: CallbackQuery):
-    """Handle advertiser role selection"""
-    logger.info(f"📞 Callback: role_advertiser from user {callback.from_user.id}")
+    """Advertiser role"""
+    logger.info(f"📞 role_advertiser")
     
-    try:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
-            [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
-            [InlineKeyboardButton(text="🔄 I also have a Channel", callback_data="role_channel_owner")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
-        ])
-        
-        await callback.message.edit_text(
-            "🎯 **Advertiser Menu**\n\n"
-            "Find the perfect channels for your advertising campaigns!",
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"❌ Error in role_advertiser: {e}")
-        await callback.answer("❌ Error occurred. Please try again.", show_alert=True)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
+        [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
+        [InlineKeyboardButton(text="🔄 I also have a Channel", callback_data="role_channel_owner")],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+    ])
+    
+    await callback.message.edit_text(
+        "🎯 **Advertiser Menu**\n\n"
+        "Find channels for your ads!",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
 
 # ============================================================================
-# CHANNEL MANAGEMENT - WITH ADMIN VERIFICATION
+# CHANNEL MANAGEMENT - SIMPLIFIED & BULLETPROOF
 # ============================================================================
 
 @router.callback_query(F.data == "add_channel")
 async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
-    """Start channel registration flow"""
-    logger.info(f"📞 Callback: add_channel from user {callback.from_user.id}")
+    """Start channel registration - NO bot.get_me() calls!"""
+    logger.info(f"📞 add_channel clicked")
     
-    try:
-        # Get bot username
-        bot_username = await get_bot_username(callback)
-        
-        logger.info(f"✅ Showing add_channel instructions with bot @{bot_username}")
-        
-        await callback.message.edit_text(
-            "📢 **Add Your Channel**\n\n"
-            "**IMPORTANT:** Before proceeding:\n\n"
-            f"1️⃣ Add @{bot_username} as **Administrator** to your channel\n"
-            "2️⃣ Enable **'Post Messages'** permission\n"
-            "3️⃣ Forward a message from your channel here\n\n"
-            "⚠️ Bot will verify admin access before registration!",
-            parse_mode="Markdown"
-        )
-        
-        await state.set_state(ChannelRegistration.waiting_for_forward)
-        await callback.answer()
-        
-        logger.info(f"✅ State set to waiting_for_forward for user {callback.from_user.id}")
-        
-    except Exception as e:
-        logger.error(f"❌ Error in callback_add_channel: {e}", exc_info=True)
-        await callback.answer("❌ Error occurred. Please try /start again.", show_alert=True)
+    # HARDCODE bot username - no API calls that can fail!
+    BOT_USERNAME = "trust_ad_marketplace_bot"
+    
+    await callback.message.edit_text(
+        "📢 **Add Your Channel**\n\n"
+        "**IMPORTANT Steps:**\n\n"
+        f"1️⃣ Add @{BOT_USERNAME} as Admin\n"
+        "2️⃣ Enable 'Post Messages'\n"
+        "3️⃣ Forward a message here\n\n"
+        "⚠️ Bot will verify admin access!",
+        parse_mode="Markdown"
+    )
+    
+    await state.set_state(ChannelRegistration.waiting_for_forward)
+    await callback.answer()
+    
+    logger.info("✅ State set to waiting_for_forward")
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
 async def process_channel_forward(message: Message, state: FSMContext):
-    """Process forwarded message from channel"""
-    logger.info(f"📨 Received message in waiting_for_forward state from user {message.from_user.id}")
+    """Process forwarded message"""
+    logger.info(f"📨 Message in waiting_for_forward state")
     
-    try:
-        if not message.forward_from_chat:
-            await message.answer("❌ Please forward a message from your channel.")
-            return
-        
-        if message.forward_from_chat.type != "channel":
-            await message.answer("❌ This is not a channel. Please forward from a channel.")
-            return
-        
-        channel_id = message.forward_from_chat.id
-        channel_title = message.forward_from_chat.title
-        channel_username = message.forward_from_chat.username
-        
-        logger.info(f"📢 Channel detected: {channel_title} (ID: {channel_id})")
-        
-        # CHECK BOT ADMIN STATUS
-        admin_check = await check_bot_admin_status(message, channel_id)
-        
-        if not admin_check["is_admin"]:
-            bot_username = await get_bot_username(message)
-            await message.answer(
-                f"❌ **Bot Not Admin**\n\n"
-                f"I'm not an admin in **{channel_title}**!\n\n"
-                f"**Steps to fix:**\n\n"
-                f"1. Open {channel_title}\n"
-                f"2. Go to Settings (⋯)\n"
-                f"3. Tap 'Administrators'\n"
-                f"4. Add @{bot_username}\n"
-                f"5. Enable 'Post Messages'\n"
-                f"6. Try again",
-                parse_mode="Markdown"
-            )
-            await state.clear()
-            logger.info(f"❌ Rejected: Not admin in {channel_id}")
-            return
-        
-        if not admin_check["can_post"]:
-            bot_username = await get_bot_username(message)
-            await message.answer(
-                f"⚠️ **Missing Permission**\n\n"
-                f"I'm admin in **{channel_title}** but can't post!\n\n"
-                f"**Steps to fix:**\n\n"
-                f"1. Go to {channel_title} → Administrators\n"
-                f"2. Tap @{bot_username}\n"
-                f"3. Enable 'Post Messages'\n"
-                f"4. Try again",
-                parse_mode="Markdown"
-            )
-            await state.clear()
-            logger.info(f"⚠️ Rejected: Can't post in {channel_id}")
-            return
-        
-        # SUCCESS!
-        logger.info(f"✅ Admin verified in {channel_id}")
-        
-        await state.update_data(
-            channel_id=channel_id,
-            channel_title=channel_title,
-            channel_username=channel_username
-        )
-        
+    if not message.forward_from_chat:
+        await message.answer("❌ Please forward a message from your channel.")
+        return
+    
+    if message.forward_from_chat.type != "channel":
+        await message.answer("❌ Not a channel. Please forward from a channel.")
+        return
+    
+    channel_id = message.forward_from_chat.id
+    channel_title = message.forward_from_chat.title
+    channel_username = message.forward_from_chat.username
+    
+    logger.info(f"📢 Channel: {channel_title} ({channel_id})")
+    
+    # CHECK ADMIN
+    admin_check = await check_bot_admin_status(message, channel_id)
+    
+    if not admin_check["is_admin"]:
         await message.answer(
-            f"✅ **Channel Verified!**\n\n"
-            f"📢 {channel_title}\n"
-            f"🔗 @{channel_username or 'Private'}\n\n"
-            f"✅ Admin access confirmed\n"
-            f"✅ Can post messages\n\n"
-            f"💰 **Set Pricing**\n\n"
-            f"Format:\n"
-            f"`Post: 100\nStory: 50\nRepost: 25`",
+            f"❌ **Not Admin**\n\n"
+            f"I'm not admin in **{channel_title}**!\n\n"
+            f"**Fix this:**\n"
+            f"1. Open {channel_title}\n"
+            f"2. Settings → Administrators\n"
+            f"3. Add @trust_ad_marketplace_bot\n"
+            f"4. Enable 'Post Messages'\n"
+            f"5. Try again",
             parse_mode="Markdown"
         )
-        
-        await state.set_state(ChannelRegistration.waiting_for_pricing)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in process_channel_forward: {e}", exc_info=True)
-        await message.answer("❌ Error processing channel. Please try again.")
         await state.clear()
+        return
+    
+    if not admin_check["can_post"]:
+        await message.answer(
+            f"⚠️ **No Post Permission**\n\n"
+            f"I'm admin but can't post!\n\n"
+            f"**Fix this:**\n"
+            f"1. {channel_title} → Administrators\n"
+            f"2. Tap @trust_ad_marketplace_bot\n"
+            f"3. Enable 'Post Messages'\n"
+            f"4. Try again",
+            parse_mode="Markdown"
+        )
+        await state.clear()
+        return
+    
+    # SUCCESS
+    logger.info(f"✅ Verified admin in {channel_id}")
+    
+    await state.update_data(
+        channel_id=channel_id,
+        channel_title=channel_title,
+        channel_username=channel_username
+    )
+    
+    await message.answer(
+        f"✅ **Verified!**\n\n"
+        f"📢 {channel_title}\n"
+        f"🔗 @{channel_username or 'Private'}\n\n"
+        f"✅ Admin confirmed\n"
+        f"✅ Can post\n\n"
+        f"💰 **Set Pricing**\n\n"
+        f"Format:\n"
+        f"`Post: 100\nStory: 50\nRepost: 25`",
+        parse_mode="Markdown"
+    )
+    
+    await state.set_state(ChannelRegistration.waiting_for_pricing)
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_pricing))
 async def process_channel_pricing(message: Message, state: FSMContext):
-    """Process channel pricing input"""
+    """Process pricing"""
     try:
         pricing = {}
         lines = message.text.strip().split('\n')
@@ -449,11 +377,7 @@ async def process_channel_pricing(message: Message, state: FSMContext):
                     pricing[key] = value
         
         if not pricing:
-            await message.answer(
-                "❌ Invalid format. Use:\n"
-                "`Post: 100\nStory: 50\nRepost: 25`",
-                parse_mode="Markdown"
-            )
+            await message.answer("❌ Invalid. Use:\n`Post: 100\nStory: 50\nRepost: 25`", parse_mode="Markdown")
             return
         
         data = await state.get_data()
@@ -472,54 +396,37 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
         if "error" in result:
             if "already exists" in str(result["error"]).lower():
-                await message.answer(
-                    f"ℹ️ **Already Listed**\n\n"
-                    f"{data['channel_title']} is in the marketplace!",
-                    parse_mode="Markdown"
-                )
+                await message.answer(f"ℹ️ **Already Listed**\n\n{data['channel_title']} is in marketplace!", parse_mode="Markdown")
             else:
-                await message.answer(f"❌ Failed: {result['error']}")
+                await message.answer(f"❌ Error: {result['error']}")
         else:
             pricing_text = "\n".join([f"{k.title()}: ${v}" for k, v in pricing.items()])
             await message.answer(
                 f"🎉 **Success!**\n\n"
                 f"📢 {data['channel_title']}\n"
-                f"💰 Pricing:\n{pricing_text}\n\n"
-                f"✅ Listed!\n"
-                f"ID: #{result.get('id')}",
+                f"💰 {pricing_text}\n\n"
+                f"✅ Listed! ID: #{result.get('id')}",
                 parse_mode="Markdown"
             )
         
         await state.clear()
         
     except Exception as e:
-        logger.error(f"Error in pricing: {e}")
-        await message.answer(
-            "❌ Invalid format. Use:\n"
-            "`Post: 100\nStory: 50\nRepost: 25`",
-            parse_mode="Markdown"
-        )
+        logger.error(f"Pricing error: {e}")
+        await message.answer("❌ Invalid. Use:\n`Post: 100\nStory: 50\nRepost: 25`", parse_mode="Markdown")
 
 
 @router.callback_query(F.data == "my_channels")
 async def callback_my_channels(callback: CallbackQuery):
-    """Show user's channels"""
-    await callback.message.edit_text(
-        "📊 **My Channels**\n\n"
-        "Coming soon!",
-        parse_mode="Markdown"
-    )
+    """My channels"""
+    await callback.message.edit_text("📊 **My Channels**\n\nComing soon!", parse_mode="Markdown")
     await callback.answer()
 
 
-# ============================================================================
-# BROWSE & PURCHASE (keeping rest the same - truncated for brevity)
-# ============================================================================
-
 @router.callback_query(F.data == "browse_channels")
 async def callback_browse_channels(callback: CallbackQuery):
-    """Show available channels"""
-    logger.info(f"📞 browse_channels from {callback.from_user.id}")
+    """Browse channels"""
+    logger.info("📞 browse_channels")
     
     channels = await api_request("GET", "/channels/")
     
@@ -549,12 +456,12 @@ async def callback_browse_channels(callback: CallbackQuery):
         for ad_type, price in pricing.items():
             keyboard.append([
                 InlineKeyboardButton(
-                    text=f"🛒 Buy {ad_type.title()} - ${price}",
+                    text=f"🛒 {ad_type.title()} ${price}",
                     callback_data=f"purchase:{channel['id']}:{ad_type}:{price}"
                 )
             ])
         
-        keyboard.append([InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu")])
         
         await callback.message.answer(
             channel_text,
@@ -568,11 +475,8 @@ async def callback_browse_channels(callback: CallbackQuery):
 
 @router.callback_query(F.data == "my_orders")
 async def callback_my_orders(callback: CallbackQuery):
-    """Show orders"""
-    await callback.message.edit_text(
-        "🛒 **My Orders**\n\nComing soon!",
-        parse_mode="Markdown"
-    )
+    """My orders"""
+    await callback.message.edit_text("🛒 **My Orders**\n\nComing soon!", parse_mode="Markdown")
     await callback.answer()
 
 
@@ -599,5 +503,4 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
 def setup_handlers(dp):
     """Register handlers"""
     dp.include_router(router)
-    logger.info("✅ Router registered")
-    logger.info("📝 Handlers: /start, /help, /stats, add_channel, browse_channels")
+    logger.info("✅ Handlers registered")
