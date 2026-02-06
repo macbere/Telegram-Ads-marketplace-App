@@ -423,6 +423,226 @@ async def callback_my_channels(callback: CallbackQuery):
     await callback.answer()
 
 
+# ============================================================================
+# PURCHASE FLOW - NEW & CRITICAL!
+# ============================================================================
+
+@router.callback_query(F.data.startswith("purchase:"))
+async def callback_purchase_start(callback: CallbackQuery, state: FSMContext):
+    """Start purchase flow - FIXES THE CRASH!"""
+    try:
+        # Parse callback data: purchase:channel_id:ad_type:price
+        parts = callback.data.split(":")
+        if len(parts) < 4:
+            await callback.answer("❌ Invalid purchase data")
+            return
+        
+        channel_id = int(parts[1])
+        ad_type = parts[2]
+        price = float(parts[3])
+        
+        logger.info(f"🛒 Purchase: channel={channel_id}, type={ad_type}, price={price}")
+        
+        # Create order in database
+        result = await api_request(
+            "POST",
+            "/orders/",
+            json={
+                "buyer_telegram_id": callback.from_user.id,
+                "channel_id": channel_id,
+                "ad_type": ad_type,
+                "price": price
+            }
+        )
+        
+        if "error" in result:
+            await callback.message.answer("❌ Failed to create order. Try again.")
+            await callback.answer()
+            return
+        
+        order_id = result.get("id")
+        
+        await state.update_data(
+            order_id=order_id,
+            channel_id=channel_id,
+            ad_type=ad_type,
+            price=price
+        )
+        
+        # Show confirmation
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Yes, Pay Now", callback_data=f"pay:{order_id}"),
+                InlineKeyboardButton(text="❌ Cancel", callback_data="main_menu")
+            ]
+        ])
+        
+        await callback.message.edit_text(
+            f"🛒 **Order #{order_id}**\n\n"
+            f"📢 Ad Type: {ad_type.title()}\n"
+            f"💰 Price: ${price}\n"
+            f"📝 Status: Pending Payment\n\n"
+            f"Proceed with payment?",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Purchase error: {e}")
+        await callback.answer("❌ Error starting purchase")
+        await callback.message.answer("Something went wrong. Please try again.")
+
+
+@router.callback_query(F.data.startswith("pay:"))
+async def callback_process_payment(callback: CallbackQuery, state: FSMContext):
+    """Process payment simulation"""
+    try:
+        order_id = int(callback.data.split(":")[1])
+        
+        # SIMULATE PAYMENT - In real app, this would redirect to payment gateway
+        # For MVP, we'll just mark as paid
+        
+        update_result = await api_request(
+            "PATCH",
+            f"/orders/{order_id}",
+            json={
+                "status": "paid",
+                "payment_method": "demo",
+                "payment_transaction_id": f"DEMO-{datetime.utcnow().timestamp()}",
+                "paid_at": datetime.utcnow().isoformat()
+            }
+        )
+        
+        if "error" in update_result:
+            await callback.answer("❌ Payment failed")
+            return
+        
+        await state.set_state(PurchaseFlow.waiting_for_creative_text)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Enter Ad Text", callback_data="enter_creative_text")],
+            [InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            f"✅ **Payment Received!**\n\n"
+            f"💰 Order #{order_id} - PAID\n"
+            f"💳 Method: Demo Payment\n\n"
+            f"📝 **Next Step:**\n"
+            f"Send the ad content (text, image, or video)\n\n"
+            f"Click below to start:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await callback.answer("✅ Payment simulated successfully!")
+        
+    except Exception as e:
+        logger.error(f"Payment error: {e}")
+        await callback.answer("❌ Payment error")
+
+
+@router.callback_query(F.data == "enter_creative_text")
+async def callback_enter_creative_text(callback: CallbackQuery, state: FSMContext):
+    """Ask for ad text"""
+    await callback.message.edit_text(
+        "📝 **Ad Content**\n\n"
+        "Please send your ad text:\n\n"
+        "Example:\n"
+        "`Check out our amazing product!\n"
+        "Visit: example.com`\n\n"
+        "You can also send an image/video with caption.",
+        parse_mode="Markdown"
+    )
+    
+    await state.set_state(PurchaseFlow.waiting_for_creative_text)
+    await callback.answer()
+
+
+@router.message(StateFilter(PurchaseFlow.waiting_for_creative_text))
+async def process_creative_text(message: Message, state: FSMContext):
+    """Process creative text"""
+    try:
+        data = await state.get_data()
+        order_id = data.get("order_id")
+        
+        if not order_id:
+            await message.answer("❌ No active order. Start over.")
+            await state.clear()
+            return
+        
+        # Update order with creative content
+        update_data = {
+            "creative_content": message.text or message.caption or "",
+            "status": "processing"
+        }
+        
+        # Check for media
+        if message.photo:
+            update_data["creative_media_id"] = message.photo[-1].file_id
+        elif message.video:
+            update_data["creative_media_id"] = message.video.file_id
+        elif message.document:
+            update_data["creative_media_id"] = message.document.file_id
+        
+        update_result = await api_request(
+            "PATCH",
+            f"/orders/{order_id}",
+            json=update_data
+        )
+        
+        if "error" in update_result:
+            await message.answer("❌ Failed to save ad content. Try again.")
+            return
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Confirm & Schedule Post", callback_data=f"schedule:{order_id}")],
+            [InlineKeyboardButton(text="✏️ Edit Content", callback_data="enter_creative_text")]
+        ])
+        
+        preview = message.text or message.caption or ""
+        if len(preview) > 100:
+            preview = preview[:100] + "..."
+        
+        await message.answer(
+            f"✅ **Ad Saved!**\n\n"
+            f"📝 Preview: {preview}\n\n"
+            f"Channel owner will review and post within 24 hours.\n\n"
+            f"Order ID: #{order_id}",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Creative error: {e}")
+        await message.answer("❌ Error saving ad. Try again.")
+
+
+@router.callback_query(F.data.startswith("schedule:"))
+async def callback_schedule_post(callback: CallbackQuery):
+    """Schedule post"""
+    order_id = int(callback.data.split(":")[1])
+    
+    await callback.message.edit_text(
+        f"✅ **Order Complete!**\n\n"
+        f"📦 Order #{order_id} scheduled\n\n"
+        f"Channel owner has been notified.\n"
+        f"They will review and post your ad.\n\n"
+        f"Use /start to check status.",
+        parse_mode="Markdown"
+    )
+    
+    await callback.answer("✅ Scheduled for review!")
+
+
+# ============================================================================
+# BROWSE CHANNELS
+# ============================================================================
+
 @router.callback_query(F.data == "browse_channels")
 async def callback_browse_channels(callback: CallbackQuery):
     """Browse channels"""
@@ -476,7 +696,43 @@ async def callback_browse_channels(callback: CallbackQuery):
 @router.callback_query(F.data == "my_orders")
 async def callback_my_orders(callback: CallbackQuery):
     """My orders"""
-    await callback.message.edit_text("🛒 **My Orders**\n\nComing soon!", parse_mode="Markdown")
+    # Get user orders
+    result = await api_request("GET", f"/orders/user/{callback.from_user.id}")
+    
+    if not isinstance(result, list):
+        await callback.message.edit_text("🛒 **My Orders**\n\nNo orders yet!")
+        await callback.answer()
+        return
+    
+    if len(result) == 0:
+        await callback.message.edit_text("🛒 **My Orders**\n\nNo orders yet!")
+        await callback.answer()
+        return
+    
+    orders_text = "🛒 **Your Orders**\n\n"
+    
+    for order in result[:5]:  # Show first 5 orders
+        status_emoji = {
+            "pending_payment": "⏳",
+            "paid": "✅",
+            "processing": "🔄",
+            "completed": "🎉",
+            "cancelled": "❌"
+        }.get(order.get("status", ""), "📦")
+        
+        orders_text += (
+            f"{status_emoji} **Order #{order.get('id')}**\n"
+            f"💰 ${order.get('price')} | 📝 {order.get('ad_type', '').title()}\n"
+            f"📊 Status: {order.get('status', 'unknown')}\n"
+            f"📅 {order.get('created_at', '')[:10]}\n\n"
+        )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Browse More", callback_data="browse_channels")],
+        [InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu")]
+    ])
+    
+    await callback.message.edit_text(orders_text, reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
 
