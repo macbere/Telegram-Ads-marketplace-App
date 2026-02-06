@@ -1,10 +1,10 @@
 """
-Telegram Bot Handlers - Complete with Purchase Flow + Admin Verification
-Handles all bot interactions including purchases, payments, and order management
+Telegram Bot Handlers - FIXED Admin Verification
+Ensures bot instance is properly available for admin checks
 """
 
 import logging
-from aiogram import Router, F, Bot
+from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -71,14 +71,19 @@ async def api_request(method: str, endpoint: str, **kwargs):
         return {"error": str(e)}
 
 
-async def check_bot_admin_status(bot: Bot, channel_id: int) -> dict:
+async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
     """
     Check if bot is admin in the channel
     Returns: {"is_admin": bool, "can_post": bool, "error": str or None}
     """
     try:
+        # Get bot instance from message
+        bot = message.bot
+        
         # Get bot's member status in the channel
         bot_member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
+        
+        logger.info(f"🔍 Bot status in channel {channel_id}: {bot_member.status}")
         
         # Check if bot is admin or creator
         is_admin = bot_member.status in ["administrator", "creator"]
@@ -91,6 +96,8 @@ async def check_bot_admin_status(bot: Bot, channel_id: int) -> dict:
             # Check if bot can post messages
             can_post = bot_member.can_post_messages if hasattr(bot_member, 'can_post_messages') else False
         
+        logger.info(f"✅ Admin check result: is_admin={is_admin}, can_post={can_post}")
+        
         return {
             "is_admin": is_admin,
             "can_post": can_post,
@@ -100,7 +107,7 @@ async def check_bot_admin_status(bot: Bot, channel_id: int) -> dict:
     
     except TelegramBadRequest as e:
         # Bot is not in the channel or has no access
-        logger.warning(f"Bot access check failed for channel {channel_id}: {e}")
+        logger.warning(f"⚠️ Bot access check failed for channel {channel_id}: {e}")
         return {
             "is_admin": False,
             "can_post": False,
@@ -108,7 +115,7 @@ async def check_bot_admin_status(bot: Bot, channel_id: int) -> dict:
             "error": str(e)
         }
     except Exception as e:
-        logger.error(f"Error checking bot admin status: {e}")
+        logger.error(f"❌ Error checking bot admin status: {e}")
         return {
             "is_admin": False,
             "can_post": False,
@@ -246,20 +253,6 @@ async def callback_role_channel_owner(callback: CallbackQuery):
     """Handle channel owner role selection"""
     logger.info(f"📞 Callback: role_channel_owner from user {callback.from_user.id}")
     
-    # Update user role
-    result = await api_request(
-        "POST",
-        "/users/",
-        params={
-            "telegram_id": callback.from_user.id,
-            "username": callback.from_user.username or "",
-            "first_name": callback.from_user.first_name or ""
-        }
-    )
-    
-    # Update is_channel_owner flag (would need API endpoint for this)
-    # For now, just show the menu
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
         [InlineKeyboardButton(text="📊 My Channels", callback_data="my_channels")],
@@ -298,18 +291,21 @@ async def callback_role_advertiser(callback: CallbackQuery):
 
 
 # ============================================================================
-# CHANNEL MANAGEMENT - WITH ADMIN VERIFICATION
+# CHANNEL MANAGEMENT - WITH FIXED ADMIN VERIFICATION
 # ============================================================================
 
 @router.callback_query(F.data == "add_channel")
 async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
     """Start channel registration flow"""
+    # Get bot username for instructions
+    bot_username = (await callback.bot.get_me()).username
+    
     await callback.message.edit_text(
         "📢 **Add Your Channel**\n\n"
         "**IMPORTANT:** Before proceeding:\n"
-        "1️⃣ Add this bot as an **Administrator** to your channel\n"
+        f"1️⃣ Add @{bot_username} as an **Administrator** to your channel\n"
         "2️⃣ Give it permission to **Post Messages**\n"
-        "3️⃣ Then forward a message from your channel\n\n"
+        "3️⃣ Then forward a message from your channel here\n\n"
         "⚠️ The bot will verify it has admin access before registration!",
         parse_mode="Markdown"
     )
@@ -318,8 +314,9 @@ async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
-async def process_channel_forward(message: Message, state: FSMContext, bot: Bot):
+async def process_channel_forward(message: Message, state: FSMContext):
     """Process forwarded message from channel - WITH ADMIN CHECK"""
+    # Validate it's a forwarded message from a channel
     if not message.forward_from_chat:
         await message.answer("❌ Please forward a message from your channel.")
         return
@@ -332,43 +329,56 @@ async def process_channel_forward(message: Message, state: FSMContext, bot: Bot)
     channel_title = message.forward_from_chat.title
     channel_username = message.forward_from_chat.username
     
+    logger.info(f"📢 Channel forward detected: {channel_title} (ID: {channel_id})")
+    
     # CHECK BOT ADMIN STATUS
-    logger.info(f"🔍 Checking bot admin status for channel {channel_id}")
-    admin_check = await check_bot_admin_status(bot, channel_id)
+    logger.info(f"🔍 Starting admin check for channel {channel_id}")
+    admin_check = await check_bot_admin_status(message, channel_id)
+    
+    logger.info(f"📊 Admin check complete: {admin_check}")
     
     if not admin_check["is_admin"]:
         # Bot is NOT admin
+        bot_username = (await message.bot.get_me()).username
         await message.answer(
             f"❌ **Bot Not Admin in Channel**\n\n"
             f"I'm not an administrator in **{channel_title}**!\n\n"
-            f"**Please do this:**\n"
-            f"1. Go to your channel settings\n"
-            f"2. Add @{(await bot.get_me()).username} as Administrator\n"
-            f"3. Enable 'Post Messages' permission\n"
-            f"4. Try forwarding a message again\n\n"
+            f"**Please follow these steps:**\n\n"
+            f"1️⃣ Open your channel: {channel_title}\n"
+            f"2️⃣ Go to channel settings (⋯ menu)\n"
+            f"3️⃣ Tap 'Administrators'\n"
+            f"4️⃣ Tap 'Add Administrator'\n"
+            f"5️⃣ Search for: @{bot_username}\n"
+            f"6️⃣ Enable 'Post Messages' permission\n"
+            f"7️⃣ Save and try forwarding a message again\n\n"
             f"⚠️ I need admin access to post ads to your channel!",
             parse_mode="Markdown"
         )
         await state.clear()
+        logger.info(f"❌ Rejected: Bot is not admin in channel {channel_id}")
         return
     
     if not admin_check["can_post"]:
         # Bot is admin but can't post
+        bot_username = (await message.bot.get_me()).username
         await message.answer(
             f"⚠️ **Missing Posting Permission**\n\n"
             f"I'm an admin in **{channel_title}**, but I don't have permission to post messages!\n\n"
-            f"**Please do this:**\n"
-            f"1. Go to channel settings → Administrators\n"
-            f"2. Click on @{(await bot.get_me()).username}\n"
-            f"3. Enable **'Post Messages'** permission\n"
-            f"4. Try forwarding a message again",
+            f"**Please follow these steps:**\n\n"
+            f"1️⃣ Go to {channel_title} settings\n"
+            f"2️⃣ Tap 'Administrators'\n"
+            f"3️⃣ Find and tap @{bot_username}\n"
+            f"4️⃣ Enable **'Post Messages'** permission\n"
+            f"5️⃣ Save and try forwarding a message again\n\n"
+            f"💡 Tip: Make sure the checkbox next to 'Post Messages' is enabled!",
             parse_mode="Markdown"
         )
         await state.clear()
+        logger.info(f"⚠️ Rejected: Bot can't post in channel {channel_id}")
         return
     
     # ✅ BOT IS ADMIN WITH POSTING RIGHTS!
-    logger.info(f"✅ Bot verified as admin in channel {channel_id}")
+    logger.info(f"✅ Bot verified as admin with post rights in channel {channel_id}")
     
     # Store channel info
     await state.update_data(
@@ -380,9 +390,9 @@ async def process_channel_forward(message: Message, state: FSMContext, bot: Bot)
     await message.answer(
         f"✅ **Channel Verified!**\n\n"
         f"📢 {channel_title}\n"
-        f"🔗 @{channel_username or 'Private Channel'}\n"
-        f"🤖 Bot has admin access ✓\n"
-        f"📝 Can post messages ✓\n\n"
+        f"🔗 @{channel_username or 'Private Channel'}\n\n"
+        f"✅ Bot has admin access\n"
+        f"✅ Can post messages\n\n"
         f"💰 **Set Your Pricing**\n\n"
         f"Please send your prices in this format:\n"
         f"`Post: 100\nStory: 50\nRepost: 25`\n\n"
@@ -470,7 +480,6 @@ async def process_channel_pricing(message: Message, state: FSMContext):
 @router.callback_query(F.data == "my_channels")
 async def callback_my_channels(callback: CallbackQuery):
     """Show user's channels"""
-    # This would need an API endpoint to fetch user's channels
     await callback.message.edit_text(
         "📊 **My Channels**\n\n"
         "This feature is coming soon!\n"
@@ -486,6 +495,7 @@ async def callback_my_channels(callback: CallbackQuery):
 
 # ============================================================================
 # BROWSE CHANNELS & PURCHASE FLOW
+# (Rest of handlers remain the same - continuing from previous file)
 # ============================================================================
 
 @router.callback_query(F.data == "browse_channels")
@@ -496,7 +506,7 @@ async def callback_browse_channels(callback: CallbackQuery, state: FSMContext):
     # Fetch channels from API
     channels = await api_request("GET", "/channels/")
     
-    # Type checking - ensure we have a list
+    # Type checking
     if not isinstance(channels, list):
         if isinstance(channels, dict) and "error" in channels:
             await callback.message.edit_text(
@@ -522,7 +532,7 @@ async def callback_browse_channels(callback: CallbackQuery, state: FSMContext):
         return
     
     # Display channels
-    for channel in channels[:5]:  # Show first 5 channels
+    for channel in channels[:5]:
         pricing = channel.get("pricing", {})
         pricing_text = "\n".join([
             f"  • {k.title()}: ${v}"
@@ -537,7 +547,6 @@ async def callback_browse_channels(callback: CallbackQuery, state: FSMContext):
             f"💰 **Pricing:**\n{pricing_text}"
         )
         
-        # Create purchase buttons
         keyboard = []
         for ad_type, price in pricing.items():
             keyboard.append([
@@ -564,20 +573,17 @@ async def callback_purchase(callback: CallbackQuery, state: FSMContext):
     """Handle purchase initiation"""
     logger.info(f"📞 Callback: purchase from user {callback.from_user.id}")
     
-    # Parse callback data: purchase:channel_id:ad_type:price
     parts = callback.data.split(":")
     channel_id = int(parts[1])
     ad_type = parts[2]
     price = float(parts[3])
     
-    # Store purchase info in state
     await state.update_data(
         channel_id=channel_id,
         ad_type=ad_type,
         price=price
     )
     
-    # Get channel details
     channel = await api_request("GET", f"/channels/{channel_id}")
     
     if "error" in channel:
@@ -588,7 +594,6 @@ async def callback_purchase(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    # Show purchase confirmation
     confirm_text = (
         f"🛒 **Order Confirmation**\n\n"
         f"📢 Channel: {channel['channel_title']}\n"
@@ -620,7 +625,6 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     
     data = await state.get_data()
     
-    # Create order
     order_data = {
         "buyer_telegram_id": callback.from_user.id,
         "channel_id": data["channel_id"],
@@ -639,11 +643,8 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
         return
     
     order_id = result.get("id")
-    
-    # Store order ID
     await state.update_data(order_id=order_id)
     
-    # Show payment options
     payment_text = (
         f"💳 **Payment Options**\n\n"
         f"Order ID: #{order_id}\n"
@@ -669,21 +670,18 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("pay_"), StateFilter(PurchaseFlow.selecting_payment))
 async def callback_payment_method(callback: CallbackQuery, state: FSMContext):
     """Handle payment method selection"""
-    payment_method = callback.data.split("_")[1]  # ton or card
-    
+    payment_method = callback.data.split("_")[1]
     data = await state.get_data()
     order_id = data.get("order_id")
     
     logger.info(f"📞 Payment method: {payment_method} for order {order_id}")
     
-    # Update order with payment method
     await api_request(
         "PATCH",
         f"/orders/{order_id}",
         json={"payment_method": payment_method}
     )
     
-    # Simulate payment (in production, integrate real payment gateway)
     payment_text = (
         f"💳 **Payment Processing**\n\n"
         f"Order ID: #{order_id}\n"
@@ -699,7 +697,6 @@ async def callback_payment_method(callback: CallbackQuery, state: FSMContext):
         parse_mode="Markdown"
     )
     
-    # Simulate payment success
     await api_request(
         "PATCH",
         f"/orders/{order_id}",
@@ -710,7 +707,6 @@ async def callback_payment_method(callback: CallbackQuery, state: FSMContext):
         }
     )
     
-    # Show success and request creative
     success_text = (
         f"✅ **Payment Successful!**\n\n"
         f"Order ID: #{order_id}\n"
@@ -755,7 +751,6 @@ async def process_creative_text(message: Message, state: FSMContext):
     data = await state.get_data()
     order_id = data.get("order_id")
     
-    # Save creative text
     await api_request(
         "PATCH",
         f"/orders/{order_id}",
@@ -795,7 +790,6 @@ async def process_creative_media(message: Message, state: FSMContext):
     data = await state.get_data()
     order_id = data.get("order_id")
     
-    # Get media file_id
     media_id = None
     if message.photo:
         media_id = message.photo[-1].file_id
@@ -806,7 +800,6 @@ async def process_creative_media(message: Message, state: FSMContext):
         await message.answer("❌ Please send a valid image or video.")
         return
     
-    # Save media
     await api_request(
         "PATCH",
         f"/orders/{order_id}",
@@ -834,7 +827,6 @@ async def callback_finalize_creative(callback: CallbackQuery, state: FSMContext)
     data = await state.get_data()
     order_id = data.get("order_id")
     
-    # Update order status
     await api_request(
         "PATCH",
         f"/orders/{order_id}",
@@ -865,16 +857,11 @@ async def callback_cancel_purchase(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ============================================================================
-# MY ORDERS
-# ============================================================================
-
 @router.callback_query(F.data == "my_orders")
 async def callback_my_orders(callback: CallbackQuery):
     """Show user's orders"""
     logger.info(f"📞 Callback: my_orders from user {callback.from_user.id}")
     
-    # Fetch user's orders
     orders = await api_request("GET", f"/orders/user/{callback.from_user.id}")
     
     if isinstance(orders, dict) and "error" in orders:
@@ -899,10 +886,9 @@ async def callback_my_orders(callback: CallbackQuery):
         await callback.answer()
         return
     
-    # Display orders
     orders_text = "🛒 **My Orders**\n\n"
     
-    for order in orders[:10]:  # Show last 10 orders
+    for order in orders[:10]:
         status_emoji = {
             "pending_payment": "⏳",
             "paid": "✅",
@@ -933,16 +919,11 @@ async def callback_my_orders(callback: CallbackQuery):
     await callback.answer()
 
 
-# ============================================================================
-# MAIN MENU
-# ============================================================================
-
 @router.callback_query(F.data == "main_menu")
 async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
     """Return to main menu"""
     await state.clear()
     
-    # Get user data
     result = await api_request(
         "GET",
         f"/users/{callback.from_user.id}"
@@ -961,10 +942,6 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-
-# ============================================================================
-# ROUTER SETUP
-# ============================================================================
 
 def setup_handlers(dp):
     """Register all handlers with the dispatcher"""
