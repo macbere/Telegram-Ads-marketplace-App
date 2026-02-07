@@ -1,5 +1,5 @@
 """
-Bot initialization and management - SIMPLIFIED VERSION
+Bot initialization - SIMPLE & RELIABLE
 """
 
 import logging
@@ -7,74 +7,70 @@ import os
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand, BotCommandScopeDefault
+from aiogram.types import BotCommand
 
 # Import handlers
 import bot_handlers
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Get bot token from environment
+# Get bot token
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable is not set!")
+    logger.error("❌ BOT_TOKEN not found in environment")
+    raise ValueError("BOT_TOKEN is required")
 
-# Initialize bot and dispatcher
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-)
+# Create bot and dispatcher
+bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
-async def set_bot_commands():
-    """Set bot commands menu"""
-    commands = [
-        BotCommand(command="start", description="🏠 Main Menu"),
-        BotCommand(command="help", description="❓ Help & Instructions"),
-        BotCommand(command="stats", description="📊 Marketplace Statistics"),
-    ]
-    
+async def setup_bot():
+    """Setup bot commands"""
     try:
-        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-        logger.info("✅ Bot commands menu set")
+        commands = [
+            BotCommand(command="start", description="🏠 Main Menu"),
+            BotCommand(command="help", description="❓ Help & Instructions"),
+            BotCommand(command="stats", description="📊 Marketplace Stats"),
+        ]
+        await bot.set_my_commands(commands)
+        logger.info("✅ Bot commands set")
     except Exception as e:
         logger.error(f"❌ Failed to set commands: {e}")
 
 
 async def start_bot():
-    """Start the bot - SIMPLE VERSION"""
-    logger.info("=" * 60)
-    logger.info("🤖 BOT STARTING...")
-    logger.info("=" * 60)
+    """Start the bot"""
+    logger.info("🤖 Starting Telegram bot...")
     
     try:
-        # Delete any webhook
+        # Delete any existing webhook
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("✅ Webhook deleted")
         
-        # Verify bot
-        me = await bot.get_me()
-        logger.info(f"✅ Bot: @{me.username} (ID: {me.id})")
+        # Get bot info
+        bot_info = await bot.get_me()
+        logger.info(f"✅ Bot: @{bot_info.username} (ID: {bot_info.id})")
         
-        # Set commands
-        await set_bot_commands()
+        # Setup commands
+        await setup_bot()
         
         # Setup handlers
         bot_handlers.setup_handlers(dp)
         logger.info("✅ Handlers registered")
         
         # Start polling
-        logger.info("🎧 Starting polling...")
+        logger.info("🎧 Bot is now listening...")
         await dp.start_polling(bot)
         
     except Exception as e:
-        logger.error(f"❌ Bot failed: {e}")
+        logger.error(f"❌ Bot failed to start: {e}")
         raise
 
 
