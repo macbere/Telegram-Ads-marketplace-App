@@ -1,4 +1,4 @@
-   """
+"""
 Telegram Bot Handlers - ULTRA SIMPLE VERSION
 """
 
