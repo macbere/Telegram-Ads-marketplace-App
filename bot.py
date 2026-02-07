@@ -1,5 +1,5 @@
 """
-Bot initialization - SIMPLE & RELIABLE
+Bot initialization
 """
 
 import logging
@@ -11,29 +11,21 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
-# Import handlers
 import bot_handlers
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get bot token
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN not found in environment")
+    logger.error("❌ BOT_TOKEN not found")
     raise ValueError("BOT_TOKEN is required")
 
-# Create bot with new aiogram 3.7+ syntax
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
 )
 
-# Create dispatcher
 dp = Dispatcher(storage=MemoryStorage())
 
 
@@ -42,8 +34,8 @@ async def setup_bot():
     try:
         commands = [
             BotCommand(command="start", description="🏠 Main Menu"),
-            BotCommand(command="help", description="❓ Help & Instructions"),
-            BotCommand(command="stats", description="📊 Marketplace Stats"),
+            BotCommand(command="help", description="❓ Help"),
+            BotCommand(command="stats", description="📊 Stats"),
         ]
         await bot.set_my_commands(commands)
         logger.info("✅ Bot commands set")
@@ -56,22 +48,17 @@ async def start_bot():
     logger.info("🤖 Starting Telegram bot...")
     
     try:
-        # Delete any existing webhook
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("✅ Webhook deleted")
         
-        # Get bot info
         bot_info = await bot.get_me()
         logger.info(f"✅ Bot: @{bot_info.username} (ID: {bot_info.id})")
         
-        # Setup commands
         await setup_bot()
         
-        # Setup handlers
         bot_handlers.setup_handlers(dp)
         logger.info("✅ Handlers registered")
         
-        # Start polling
         logger.info("🎧 Bot is now listening...")
         await dp.start_polling(bot)
         
