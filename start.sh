@@ -8,8 +8,13 @@ echo "📋 Environment:"
 echo "  - PORT: $PORT"
 echo "  - BOT_TOKEN: ${BOT_TOKEN:0:10}..."
 
-echo "⏳ Starting in 5 seconds..."
-sleep 5
+echo "🧹 Killing old processes..."
+pkill -9 -f "python" || true
+pkill -9 -f "python3" || true
+sleep 10
+
+echo "⏳ Starting in 15 seconds..."
+sleep 15
 
 echo "🚀 Starting server..."
 python main.py
