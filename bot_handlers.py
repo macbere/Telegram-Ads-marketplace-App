@@ -218,7 +218,7 @@ async def cmd_stats(message: Message):
 @router.callback_query(F.data == "role_channel_owner")
 async def callback_role_channel_owner(callback: CallbackQuery):
     """Channel owner role"""
-    logger.info(f"📞 role_channel_owner")
+    logger.info(f"📞 role_channel_owner from {callback.from_user.id}")
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
@@ -239,7 +239,7 @@ async def callback_role_channel_owner(callback: CallbackQuery):
 @router.callback_query(F.data == "role_advertiser")
 async def callback_role_advertiser(callback: CallbackQuery):
     """Advertiser role"""
-    logger.info(f"📞 role_advertiser")
+    logger.info(f"📞 role_advertiser from {callback.from_user.id}")
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
@@ -263,32 +263,37 @@ async def callback_role_advertiser(callback: CallbackQuery):
 
 @router.callback_query(F.data == "add_channel")
 async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
-    """Start channel registration - NO bot.get_me() calls!"""
-    logger.info(f"📞 add_channel clicked")
+    """Start channel registration"""
+    logger.info(f"📞 add_channel clicked by {callback.from_user.id}")
     
     # HARDCODE bot username - no API calls that can fail!
     BOT_USERNAME = "trust_ad_marketplace_bot"
     
-    await callback.message.edit_text(
-        "📢 **Add Your Channel**\n\n"
-        "**IMPORTANT Steps:**\n\n"
-        f"1️⃣ Add @{BOT_USERNAME} as Admin\n"
-        "2️⃣ Enable 'Post Messages'\n"
-        "3️⃣ Forward a message here\n\n"
-        "⚠️ Bot will verify admin access!",
-        parse_mode="Markdown"
-    )
-    
-    await state.set_state(ChannelRegistration.waiting_for_forward)
-    await callback.answer()
-    
-    logger.info("✅ State set to waiting_for_forward")
+    try:
+        await callback.message.edit_text(
+            "📢 **Add Your Channel**\n\n"
+            "**IMPORTANT Steps:**\n\n"
+            f"1️⃣ Add @{BOT_USERNAME} as Admin\n"
+            "2️⃣ Enable 'Post Messages'\n"
+            "3️⃣ Forward a message here\n\n"
+            "⚠️ Bot will verify admin access!",
+            parse_mode="Markdown"
+        )
+        
+        await state.set_state(ChannelRegistration.waiting_for_forward)
+        await callback.answer("✅ Ready! Forward a message from your channel.")
+        
+        logger.info(f"✅ State set to waiting_for_forward for user {callback.from_user.id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error in add_channel: {e}")
+        await callback.answer("❌ Error, try again", show_alert=True)
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
 async def process_channel_forward(message: Message, state: FSMContext):
     """Process forwarded message"""
-    logger.info(f"📨 Message in waiting_for_forward state")
+    logger.info(f"📨 Message in waiting_for_forward state from {message.from_user.id}")
     
     if not message.forward_from_chat:
         await message.answer("❌ Please forward a message from your channel.")
@@ -302,7 +307,7 @@ async def process_channel_forward(message: Message, state: FSMContext):
     channel_title = message.forward_from_chat.title
     channel_username = message.forward_from_chat.username
     
-    logger.info(f"📢 Channel: {channel_title} ({channel_id})")
+    logger.info(f"📢 Channel detected: {channel_title} ({channel_id})")
     
     # CHECK ADMIN
     admin_check = await check_bot_admin_status(message, channel_id)
@@ -352,8 +357,11 @@ async def process_channel_forward(message: Message, state: FSMContext):
         f"✅ Admin confirmed\n"
         f"✅ Can post\n\n"
         f"💰 **Set Pricing**\n\n"
-        f"Format:\n"
-        f"`Post: 100\nStory: 50\nRepost: 25`",
+        f"**Format:**\n"
+        f"`Post: 100`\n"
+        f"`Story: 50`\n"
+        f"`Repost: 25`\n\n"
+        f"Send your pricing now:",
         parse_mode="Markdown"
     )
     
@@ -377,7 +385,14 @@ async def process_channel_pricing(message: Message, state: FSMContext):
                     pricing[key] = value
         
         if not pricing:
-            await message.answer("❌ Invalid. Use:\n`Post: 100\nStory: 50\nRepost: 25`", parse_mode="Markdown")
+            await message.answer(
+                "❌ Invalid format.\n\n"
+                "**Correct format:**\n"
+                "`Post: 100`\n"
+                "`Story: 50`\n"
+                "`Repost: 25`",
+                parse_mode="Markdown"
+            )
             return
         
         data = await state.get_data()
@@ -396,7 +411,7 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
         if "error" in result:
             if "already exists" in str(result["error"]).lower():
-                await message.answer(f"ℹ️ **Already Listed**\n\n{data['channel_title']} is in marketplace!", parse_mode="Markdown")
+                await message.answer(f"ℹ️ **Already Listed**\n\n{data['channel_title']} is already in marketplace!", parse_mode="Markdown")
             else:
                 await message.answer(f"❌ Error: {result['error']}")
         else:
@@ -405,7 +420,8 @@ async def process_channel_pricing(message: Message, state: FSMContext):
                 f"🎉 **Success!**\n\n"
                 f"📢 {data['channel_title']}\n"
                 f"💰 {pricing_text}\n\n"
-                f"✅ Listed! ID: #{result.get('id')}",
+                f"✅ Channel listed! ID: #{result.get('id')}\n\n"
+                f"Advertisers can now find your channel!",
                 parse_mode="Markdown"
             )
         
@@ -413,23 +429,45 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
     except Exception as e:
         logger.error(f"Pricing error: {e}")
-        await message.answer("❌ Invalid. Use:\n`Post: 100\nStory: 50\nRepost: 25`", parse_mode="Markdown")
+        await message.answer(
+            "❌ Invalid format.\n\n"
+            "**Correct format:**\n"
+            "`Post: 100`\n"
+            "`Story: 50`\n"
+            "`Repost: 25`\n\n"
+            "Try again:",
+            parse_mode="Markdown"
+        )
 
 
 @router.callback_query(F.data == "my_channels")
 async def callback_my_channels(callback: CallbackQuery):
     """My channels"""
-    await callback.message.edit_text("📊 **My Channels**\n\nComing soon!", parse_mode="Markdown")
-    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            "📊 **My Channels**\n\n"
+            "Feature coming soon!\n\n"
+            "You'll be able to:\n"
+            "• View all your channels\n"
+            "• Update pricing\n"
+            "• See earnings\n"
+            "• Track performance",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error in my_channels: {e}")
+        await callback.answer("❌ Error loading channels", show_alert=True)
+    finally:
+        await callback.answer()
 
 
 # ============================================================================
-# PURCHASE FLOW - NEW & CRITICAL!
+# PURCHASE FLOW
 # ============================================================================
 
 @router.callback_query(F.data.startswith("purchase:"))
 async def callback_purchase_start(callback: CallbackQuery, state: FSMContext):
-    """Start purchase flow - FIXES THE CRASH!"""
+    """Start purchase flow"""
     try:
         # Parse callback data: purchase:channel_id:ad_type:price
         parts = callback.data.split(":")
@@ -456,8 +494,7 @@ async def callback_purchase_start(callback: CallbackQuery, state: FSMContext):
         )
         
         if "error" in result:
-            await callback.message.answer("❌ Failed to create order. Try again.")
-            await callback.answer()
+            await callback.answer("❌ Failed to create order. Try again.")
             return
         
         order_id = result.get("id")
@@ -501,9 +538,7 @@ async def callback_process_payment(callback: CallbackQuery, state: FSMContext):
     try:
         order_id = int(callback.data.split(":")[1])
         
-        # SIMULATE PAYMENT - In real app, this would redirect to payment gateway
-        # For MVP, we'll just mark as paid
-        
+        # SIMULATE PAYMENT
         update_result = await api_request(
             "PATCH",
             f"/orders/{order_id}",
@@ -547,18 +582,22 @@ async def callback_process_payment(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "enter_creative_text")
 async def callback_enter_creative_text(callback: CallbackQuery, state: FSMContext):
     """Ask for ad text"""
-    await callback.message.edit_text(
-        "📝 **Ad Content**\n\n"
-        "Please send your ad text:\n\n"
-        "Example:\n"
-        "`Check out our amazing product!\n"
-        "Visit: example.com`\n\n"
-        "You can also send an image/video with caption.",
-        parse_mode="Markdown"
-    )
-    
-    await state.set_state(PurchaseFlow.waiting_for_creative_text)
-    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            "📝 **Ad Content**\n\n"
+            "Please send your ad text:\n\n"
+            "**Example:**\n"
+            "`Check out our amazing product!\n"
+            "Visit: example.com`\n\n"
+            "You can also send an image/video with caption.",
+            parse_mode="Markdown"
+        )
+        
+        await state.set_state(PurchaseFlow.waiting_for_creative_text)
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in enter_creative_text: {e}")
+        await callback.answer("❌ Error", show_alert=True)
 
 
 @router.message(StateFilter(PurchaseFlow.waiting_for_creative_text))
@@ -625,18 +664,22 @@ async def process_creative_text(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("schedule:"))
 async def callback_schedule_post(callback: CallbackQuery):
     """Schedule post"""
-    order_id = int(callback.data.split(":")[1])
-    
-    await callback.message.edit_text(
-        f"✅ **Order Complete!**\n\n"
-        f"📦 Order #{order_id} scheduled\n\n"
-        f"Channel owner has been notified.\n"
-        f"They will review and post your ad.\n\n"
-        f"Use /start to check status.",
-        parse_mode="Markdown"
-    )
-    
-    await callback.answer("✅ Scheduled for review!")
+    try:
+        order_id = int(callback.data.split(":")[1])
+        
+        await callback.message.edit_text(
+            f"✅ **Order Complete!**\n\n"
+            f"📦 Order #{order_id} scheduled\n\n"
+            f"Channel owner has been notified.\n"
+            f"They will review and post your ad.\n\n"
+            f"Use /start to check status.",
+            parse_mode="Markdown"
+        )
+        
+        await callback.answer("✅ Scheduled for review!")
+    except Exception as e:
+        logger.error(f"Schedule error: {e}")
+        await callback.answer("❌ Error", show_alert=True)
 
 
 # ============================================================================
@@ -646,29 +689,35 @@ async def callback_schedule_post(callback: CallbackQuery):
 @router.callback_query(F.data == "browse_channels")
 async def callback_browse_channels(callback: CallbackQuery):
     """Browse channels"""
-    logger.info("📞 browse_channels")
+    logger.info(f"📞 browse_channels from {callback.from_user.id}")
     
-    channels = await api_request("GET", "/channels/")
-    
-    if not isinstance(channels, list):
-        await callback.message.edit_text("❌ Failed to load channels.")
-        await callback.answer()
-        return
-    
-    if len(channels) == 0:
-        await callback.message.edit_text("📢 **No Channels**\n\nCheck back later!")
-        await callback.answer()
-        return
-    
-    for channel in channels[:5]:
+    try:
+        channels = await api_request("GET", "/channels/")
+        
+        if not isinstance(channels, list):
+            await callback.message.edit_text("❌ Failed to load channels.")
+            await callback.answer()
+            return
+        
+        if len(channels) == 0:
+            await callback.message.edit_text(
+                "📢 **No Channels Yet**\n\n"
+                "Be the first to list your channel!",
+                parse_mode="Markdown"
+            )
+            await callback.answer()
+            return
+        
+        # Send first channel
+        channel = channels[0]
         pricing = channel.get("pricing", {})
         pricing_text = "\n".join([f"  • {k.title()}: ${v}" for k, v in pricing.items()])
         
         channel_text = (
             f"📢 **{channel['channel_title']}**\n"
             f"🔗 @{channel.get('channel_username', 'Private')}\n"
-            f"👥 {channel.get('subscribers', 0):,}\n"
-            f"👀 {channel.get('avg_views', 0):,}\n\n"
+            f"👥 Subscribers: {channel.get('subscribers', 0):,}\n"
+            f"👀 Avg Views: {channel.get('avg_views', 0):,}\n\n"
             f"💰 **Pricing:**\n{pricing_text}"
         )
         
@@ -681,82 +730,107 @@ async def callback_browse_channels(callback: CallbackQuery):
                 )
             ])
         
+        keyboard.append([InlineKeyboardButton(text="🔍 Load More", callback_data="browse_more")])
         keyboard.append([InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu")])
         
-        await callback.message.answer(
+        await callback.message.edit_text(
             channel_text,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
             parse_mode="Markdown"
         )
-    
-    await callback.message.delete()
-    await callback.answer("✅ Loaded!")
+        
+        await callback.answer("✅ Channel loaded!")
+        
+    except Exception as e:
+        logger.error(f"Browse error: {e}")
+        await callback.answer("❌ Error loading channels", show_alert=True)
+
+
+@router.callback_query(F.data == "browse_more")
+async def callback_browse_more(callback: CallbackQuery):
+    """Load more channels"""
+    await callback.answer("📢 More channels coming soon!")
+    # For now, just acknowledge
 
 
 @router.callback_query(F.data == "my_orders")
 async def callback_my_orders(callback: CallbackQuery):
     """My orders"""
-    # Get user orders
-    result = await api_request("GET", f"/orders/user/{callback.from_user.id}")
-    
-    if not isinstance(result, list):
-        await callback.message.edit_text("🛒 **My Orders**\n\nNo orders yet!")
-        await callback.answer()
-        return
-    
-    if len(result) == 0:
-        await callback.message.edit_text("🛒 **My Orders**\n\nNo orders yet!")
-        await callback.answer()
-        return
-    
-    orders_text = "🛒 **Your Orders**\n\n"
-    
-    for order in result[:5]:  # Show first 5 orders
-        status_emoji = {
-            "pending_payment": "⏳",
-            "paid": "✅",
-            "processing": "🔄",
-            "completed": "🎉",
-            "cancelled": "❌"
-        }.get(order.get("status", ""), "📦")
+    try:
+        # Get user orders
+        result = await api_request("GET", f"/orders/user/{callback.from_user.id}")
         
-        orders_text += (
-            f"{status_emoji} **Order #{order.get('id')}**\n"
-            f"💰 ${order.get('price')} | 📝 {order.get('ad_type', '').title()}\n"
-            f"📊 Status: {order.get('status', 'unknown')}\n"
-            f"📅 {order.get('created_at', '')[:10]}\n\n"
-        )
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔍 Browse More", callback_data="browse_channels")],
-        [InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu")]
-    ])
-    
-    await callback.message.edit_text(orders_text, reply_markup=keyboard, parse_mode="Markdown")
-    await callback.answer()
+        if not isinstance(result, list):
+            await callback.message.edit_text("🛒 **My Orders**\n\nNo orders yet!")
+            await callback.answer()
+            return
+        
+        if len(result) == 0:
+            await callback.message.edit_text(
+                "🛒 **My Orders**\n\n"
+                "No orders yet!\n\n"
+                "Browse channels to get started!",
+                parse_mode="Markdown"
+            )
+            await callback.answer()
+            return
+        
+        orders_text = "🛒 **Your Orders**\n\n"
+        
+        for order in result[:5]:  # Show first 5 orders
+            status_emoji = {
+                "pending_payment": "⏳",
+                "paid": "✅",
+                "processing": "🔄",
+                "completed": "🎉",
+                "cancelled": "❌"
+            }.get(order.get("status", ""), "📦")
+            
+            orders_text += (
+                f"{status_emoji} **Order #{order.get('id')}**\n"
+                f"💰 ${order.get('price')} | 📝 {order.get('ad_type', '').title()}\n"
+                f"📊 Status: {order.get('status', 'unknown')}\n"
+                f"📅 {order.get('created_at', '')[:10]}\n\n"
+            )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Browse More", callback_data="browse_channels")],
+            [InlineKeyboardButton(text="🏠 Menu", callback_data="main_menu")]
+        ])
+        
+        await callback.message.edit_text(orders_text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"My orders error: {e}")
+        await callback.answer("❌ Error loading orders", show_alert=True)
 
 
 @router.callback_query(F.data == "main_menu")
 async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
     """Main menu"""
-    await state.clear()
-    
-    result = await api_request("GET", f"/users/{callback.from_user.id}")
-    
-    is_owner = result.get("is_channel_owner", False)
-    is_advertiser = result.get("is_advertiser", False)
-    
-    keyboard = create_main_menu_keyboard(is_owner, is_advertiser)
-    
-    await callback.message.edit_text(
-        "🏠 **Main Menu**\n\nWhat would you like to do?",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-    await callback.answer()
+    try:
+        await state.clear()
+        
+        result = await api_request("GET", f"/users/{callback.from_user.id}")
+        
+        is_owner = result.get("is_channel_owner", False)
+        is_advertiser = result.get("is_advertiser", False)
+        
+        keyboard = create_main_menu_keyboard(is_owner, is_advertiser)
+        
+        await callback.message.edit_text(
+            "🏠 **Main Menu**\n\nWhat would you like to do?",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Main menu error: {e}")
+        await callback.answer("❌ Error", show_alert=True)
 
 
 def setup_handlers(dp):
     """Register handlers"""
     dp.include_router(router)
-    logger.info("✅ Handlers registered")
+    logger.info("✅ All handlers registered")
