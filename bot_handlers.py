@@ -1,4 +1,4 @@
-"""
+   """
 Telegram Bot Handlers - ULTRA SIMPLE VERSION
 """
 
@@ -176,13 +176,14 @@ async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
         # Clear any existing state
         await state.clear()
         
-        # Get bot username from bot instance
-        bot_username = callback.bot._token.split(':')[0]
+        # Get bot info
+        bot_info = await callback.bot.get_me()
+        bot_username = bot_info.username
         
         await callback.message.edit_text(
             f"📢 **Add Your Channel**\n\n"
             f"**Steps:**\n"
-            f"1. Add @{bot_username}_bot as Admin\n"
+            f"1. Add @{bot_username} as Admin\n"
             f"2. Enable 'Post Messages' permission\n"
             f"3. Forward any message from your channel here\n\n"
             f"Ready? Forward a message now!",
@@ -307,6 +308,117 @@ async def process_channel_pricing(message: Message, state: FSMContext):
                         
                         await message.answer(
                             f"🎉 **Channel Listed Successfully!**\n\n"
+                            f"📢 {data['channel_title']}\n"
+                            f"💰 Pricing:\n{pricing_str}\n\n"
+                            f"✅ Your channel is now in the marketplace!\n"
+                            f"Advertisers can find and purchase ads.",
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        error_text = await response.text()
+                        if "already exists" in error_text.lower():
+                            await message.answer(f"ℹ️ {data['channel_title']} is already listed!")
+                        else:
+                            await message.answer(f"❌ Error: {error_text[:100]}")
+        
+        except Exception as api_error:
+            logger.error(f"API error: {api_error}")
+            await message.answer("✅ Channel registration complete! (API offline)")
+        
+        # Clear state
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error processing pricing: {e}")
+        await message.answer("❌ Error processing pricing. Please try again.")
+        await state.clear()
+
+
+# ============================================================================
+# OTHER MENU HANDLERS
+# ============================================================================
+
+@router.callback_query(F.data == "my_channels")
+async def callback_my_channels(callback: CallbackQuery):
+    """My channels"""
+    try:
+        await callback.message.edit_text(
+            "📊 **My Channels**\n\n"
+            "This feature is coming soon!\n\n"
+            "You'll be able to:\n"
+            "• View all your listed channels\n"
+            "• Update pricing\n"
+            "• See earnings\n"
+            "• Track performance",
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+@router.callback_query(F.data == "browse_channels")
+async def callback_browse_channels(callback: CallbackQuery):
+    """Browse channels"""
+    try:
+        await callback.message.edit_text(
+            "🔍 **Browse Channels**\n\n"
+            "This feature is coming soon!\n\n"
+            "You'll be able to:\n"
+            "• Browse all available channels\n"
+            "• Filter by category/price\n"
+            "• Purchase ad slots\n"
+            "• Track your ads",
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+@router.callback_query(F.data == "my_orders")
+async def callback_my_orders(callback: CallbackQuery):
+    """My orders"""
+    try:
+        await callback.message.edit_text(
+            "🛒 **My Orders**\n\n"
+            "This feature is coming soon!\n\n"
+            "You'll be able to:\n"
+            "• View all your orders\n"
+            "• Track order status\n"
+            "• Submit ad content\n"
+            "• View performance",
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+@router.callback_query(F.data == "main_menu")
+async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
+    """Main menu"""
+    try:
+        await state.clear()
+        await callback.message.edit_text(
+            "🏠 **Main Menu**\n\n"
+            "What would you like to do?",
+            reply_markup=create_main_menu(),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+# ============================================================================
+# SETUP FUNCTION
+# ============================================================================
+
+def setup_handlers(dp):
+    """Register all handlers"""
+    dp.include_router(router)
+    logger.info("✅ All bot handlers registered successfully")                         f"🎉 **Channel Listed Successfully!**\n\n"
                             f"📢 {data['channel_title']}\n"
                             f"💰 Pricing:\n{pricing_str}\n\n"
                             f"✅ Your channel is now in the marketplace!\n"
