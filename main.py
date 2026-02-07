@@ -1,9 +1,8 @@
 """
-main.py - SIMPLE FastAPI server
+main.py - FastAPI server
 """
 
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import engine, get_db, Base
@@ -16,11 +15,9 @@ from contextlib import asynccontextmanager
 import logging
 import asyncio
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import bot
 import bot
 
 
@@ -29,16 +26,13 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown"""
     logger.info("🚀 Starting application...")
     
-    # Create tables
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database ready")
     
-    # Start bot in background
     bot_task = asyncio.create_task(bot.start_bot())
     
     yield
     
-    # Shutdown
     logger.info("👋 Shutting down...")
     await bot.stop_bot()
     if not bot_task.done():
@@ -46,22 +40,8 @@ async def lifespan(app: FastAPI):
     logger.info("✅ Application stopped")
 
 
-# Create app
 app = FastAPI(title="Telegram Ads Marketplace", version="1.0", lifespan=lifespan)
 
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ============================================================================
-# MODELS
-# ============================================================================
 
 class ChannelCreate(BaseModel):
     owner_telegram_id: int
@@ -70,10 +50,6 @@ class ChannelCreate(BaseModel):
     channel_username: Optional[str] = None
     pricing: Dict[str, float]
 
-
-# ============================================================================
-# BASIC ENDPOINTS
-# ============================================================================
 
 @app.get("/")
 async def root():
@@ -176,7 +152,6 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
 @app.post("/channels/")
 async def create_channel(channel: ChannelCreate, db: Session = Depends(get_db)):
     """Create channel"""
-    # Check if exists
     existing = db.query(Channel).filter(
         Channel.telegram_channel_id == channel.telegram_channel_id
     ).first()
@@ -184,7 +159,6 @@ async def create_channel(channel: ChannelCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(400, "Channel already exists")
     
-    # Get or create user
     user = db.query(User).filter(User.telegram_id == channel.owner_telegram_id).first()
     if not user:
         user = User(telegram_id=channel.owner_telegram_id, is_channel_owner=True)
@@ -195,7 +169,6 @@ async def create_channel(channel: ChannelCreate, db: Session = Depends(get_db)):
         user.is_channel_owner = True
         db.commit()
     
-    # Create channel
     new_channel = Channel(
         owner_id=user.id,
         telegram_channel_id=channel.telegram_channel_id,
@@ -236,10 +209,6 @@ async def list_channels(db: Session = Depends(get_db)):
     
     return result
 
-
-# ============================================================================
-# RUN SERVER
-# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
