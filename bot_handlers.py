@@ -1,4 +1,4 @@
-    """
+   """
 Telegram Bot Handlers - ULTRA SIMPLE VERSION
 """
 
@@ -22,19 +22,11 @@ router = Router()
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:10000")
 
 
-# ============================================================================
-# FSM STATES
-# ============================================================================
-
 class ChannelRegistration(StatesGroup):
     """States for channel registration flow"""
     waiting_for_forward = State()
     waiting_for_pricing = State()
 
-
-# ============================================================================
-# SIMPLE MENU FUNCTIONS
-# ============================================================================
 
 def create_main_menu():
     """Create main menu keyboard"""
@@ -67,13 +59,9 @@ def create_advertiser_menu():
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-# ============================================================================
-# COMMAND HANDLERS
-# ============================================================================
-
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    """Handle /start command - SIMPLE VERSION"""
+    """Handle /start command"""
     logger.info(f"/start from {message.from_user.id}")
     
     await state.clear()
@@ -133,10 +121,6 @@ async def cmd_stats(message: Message):
         await message.answer("📊 **Statistics**\n\nNo data available yet.")
 
 
-# ============================================================================
-# CALLBACK HANDLERS - SIMPLIFIED
-# ============================================================================
-
 @router.callback_query(F.data == "role_channel_owner")
 async def callback_role_channel_owner(callback: CallbackQuery):
     """Channel owner role"""
@@ -171,12 +155,11 @@ async def callback_role_advertiser(callback: CallbackQuery):
 
 @router.callback_query(F.data == "add_channel")
 async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
-    """Start channel registration - ULTRA SIMPLE"""
+    """Start channel registration"""
     try:
-        # Clear any existing state
         await state.clear()
         
-        # Get bot info
+        # Get bot username
         bot_info = await callback.bot.get_me()
         bot_username = bot_info.username
         
@@ -190,23 +173,17 @@ async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
             parse_mode="Markdown"
         )
         
-        # Set state
         await state.set_state(ChannelRegistration.waiting_for_forward)
-        
-        # Always answer callback
         await callback.answer("✅ Ready! Forward a message from your channel.")
-        
-        logger.info(f"User {callback.from_user.id} started channel registration")
         
     except Exception as e:
         logger.error(f"Error in add_channel: {e}")
-        # Even on error, answer the callback
         await callback.answer("⚠️ Please try again", show_alert=True)
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
 async def process_channel_forward(message: Message, state: FSMContext):
-    """Process forwarded message - SIMPLE"""
+    """Process forwarded message"""
     try:
         if not message.forward_from_chat:
             await message.answer("❌ Please forward a message FROM a channel (not a person).")
@@ -216,21 +193,18 @@ async def process_channel_forward(message: Message, state: FSMContext):
             await message.answer("❌ This is not a channel. Please forward from a Telegram channel.")
             return
         
-        # Get channel info
         channel_id = message.forward_from_chat.id
         channel_title = message.forward_from_chat.title or "Unknown Channel"
         channel_username = message.forward_from_chat.username
         
         logger.info(f"Channel detected: {channel_title} ({channel_id})")
         
-        # Store in state
         await state.update_data(
             channel_id=channel_id,
             channel_title=channel_title,
             channel_username=channel_username
         )
         
-        # Ask for pricing
         await message.answer(
             f"✅ **Channel Detected!**\n\n"
             f"📢 {channel_title}\n"
@@ -254,20 +228,17 @@ async def process_channel_forward(message: Message, state: FSMContext):
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_pricing))
 async def process_channel_pricing(message: Message, state: FSMContext):
-    """Process pricing - SIMPLE"""
+    """Process pricing"""
     try:
-        # Get data from state
         data = await state.get_data()
         if not data:
             await message.answer("❌ No channel data found. Start over with /start")
             await state.clear()
             return
         
-        # Parse pricing (simple)
         pricing_text = message.text.strip().lower()
         pricing = {}
         
-        # Try to parse
         if ':' in pricing_text:
             parts = pricing_text.split(':')
             if len(parts) == 2:
@@ -290,7 +261,6 @@ async def process_channel_pricing(message: Message, state: FSMContext):
             )
             return
         
-        # Create channel via API
         try:
             async with aiohttp.ClientSession() as session:
                 payload = {
@@ -307,6 +277,109 @@ async def process_channel_pricing(message: Message, state: FSMContext):
                         pricing_str = "\n".join([f"• {k}: ${v}" for k, v in pricing.items()])
                         
                         await message.answer(
+                            f"🎉 **Channel Listed Successfully!**\n\n"
+                            f"📢 {data['channel_title']}\n"
+                            f"💰 Pricing:\n{pricing_str}\n\n"
+                            f"✅ Your channel is now in the marketplace!\n"
+                            f"Advertisers can find and purchase ads.",
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        error_text = await response.text()
+                        if "already exists" in error_text.lower():
+                            await message.answer(f"ℹ️ {data['channel_title']} is already listed!")
+                        else:
+                            await message.answer(f"❌ Error: {error_text[:100]}")
+        
+        except Exception as api_error:
+            logger.error(f"API error: {api_error}")
+            await message.answer("✅ Channel registration complete! (API offline)")
+        
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error processing pricing: {e}")
+        await message.answer("❌ Error processing pricing. Please try again.")
+        await state.clear()
+
+
+@router.callback_query(F.data == "my_channels")
+async def callback_my_channels(callback: CallbackQuery):
+    """My channels"""
+    try:
+        await callback.message.edit_text(
+            "📊 **My Channels**\n\n"
+            "This feature is coming soon!\n\n"
+            "You'll be able to:\n"
+            "• View all your listed channels\n"
+            "• Update pricing\n"
+            "• See earnings\n"
+            "• Track performance",
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+@router.callback_query(F.data == "browse_channels")
+async def callback_browse_channels(callback: CallbackQuery):
+    """Browse channels"""
+    try:
+        await callback.message.edit_text(
+            "🔍 **Browse Channels**\n\n"
+            "This feature is coming soon!\n\n"
+            "You'll be able to:\n"
+            "• Browse all available channels\n"
+            "• Filter by category/price\n"
+            "• Purchase ad slots\n"
+            "• Track your ads",
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+@router.callback_query(F.data == "my_orders")
+async def callback_my_orders(callback: CallbackQuery):
+    """My orders"""
+    try:
+        await callback.message.edit_text(
+            "🛒 **My Orders**\n\n"
+            "This feature is coming soon!\n\n"
+            "You'll be able to:\n"
+            "• View all your orders\n"
+            "• Track order status\n"
+            "• Submit ad content\n"
+            "• View performance",
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+@router.callback_query(F.data == "main_menu")
+async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
+    """Main menu"""
+    try:
+        await state.clear()
+        await callback.message.edit_text(
+            "🏠 **Main Menu**\n\n"
+            "What would you like to do?",
+            reply_markup=create_main_menu(),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+    except:
+        await callback.answer("✅")
+
+
+def setup_handlers(dp):
+    """Register all handlers"""
+    dp.include_router(router)
+    logger.info("✅ All bot handlers registered successfully")                     await message.answer(
                             f"🎉 **Channel Listed Successfully!**\n\n"
                             f"📢 {data['channel_title']}\n"
                             f"💰 Pricing:\n{pricing_str}\n\n"
