@@ -7,6 +7,7 @@ import os
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
@@ -26,8 +27,13 @@ if not BOT_TOKEN:
     logger.error("❌ BOT_TOKEN not found in environment")
     raise ValueError("BOT_TOKEN is required")
 
-# Create bot and dispatcher
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
+# Create bot with new aiogram 3.7+ syntax
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+)
+
+# Create dispatcher
 dp = Dispatcher(storage=MemoryStorage())
 
 
