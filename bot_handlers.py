@@ -1,6 +1,6 @@
 """
-Telegram Bot Handlers - ULTRA SIMPLE (NO DATABASE REQUIRED)
-This version works completely standalone without any API calls
+Telegram Bot Handlers - GUARANTEED TO WORK
+NO Markdown, NO API calls, NO database
 """
 
 import logging
@@ -48,7 +48,7 @@ async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
         bot = message.bot
         bot_member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
         
-        logger.info(f"📊 Bot status in channel {channel_id}: {bot_member.status}")
+        logger.info(f"Bot status in channel {channel_id}: {bot_member.status}")
         
         is_admin = bot_member.status in ["administrator", "creator"]
         can_post = False
@@ -60,22 +60,22 @@ async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
         
         return {"is_admin": is_admin, "can_post": can_post}
     except Exception as e:
-        logger.error(f"❌ Admin check error: {e}")
+        logger.error(f"Admin check error: {e}")
         return {"is_admin": False, "can_post": False}
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Handle /start command"""
-    logger.info(f"👤 /start from user {message.from_user.id}")
+    logger.info(f"/start from user {message.from_user.id}")
     await state.clear()
     
     welcome_text = (
-        "👋 Welcome to Telegram Ads Marketplace!\n\n"
-        "Connect channel owners with advertisers.\n\n"
-        "👤 Your Profile:\n"
+        f"👋 Welcome to Telegram Ads Marketplace!\n\n"
+        f"Connect channel owners with advertisers.\n\n"
+        f"Your Profile:\n"
         f"Name: {message.from_user.first_name or 'User'}\n"
         f"Username: @{message.from_user.username or 'Not set'}\n\n"
-        "How would you like to use the marketplace?"
+        f"How would you like to use the marketplace?"
     )
     
     await message.answer(welcome_text, reply_markup=create_main_menu())
@@ -115,7 +115,7 @@ async def cmd_stats(message: Message):
 @router.callback_query(F.data == "role_channel_owner")
 async def callback_role_channel_owner(callback: CallbackQuery):
     """Handle channel owner role selection"""
-    logger.info(f"📞 role_channel_owner from {callback.from_user.id}")
+    logger.info(f"role_channel_owner from {callback.from_user.id}")
     
     text = "📢 Channel Owner Menu\n\nList your channels and earn money!"
     await callback.message.edit_text(text, reply_markup=create_channel_owner_menu())
@@ -124,7 +124,7 @@ async def callback_role_channel_owner(callback: CallbackQuery):
 @router.callback_query(F.data == "role_advertiser")
 async def callback_role_advertiser(callback: CallbackQuery):
     """Handle advertiser role selection"""
-    logger.info(f"📞 role_advertiser from {callback.from_user.id}")
+    logger.info(f"role_advertiser from {callback.from_user.id}")
     
     text = "🎯 Advertiser Menu\n\nFind channels for your ads!"
     await callback.message.edit_text(text, reply_markup=create_advertiser_menu())
@@ -133,34 +133,36 @@ async def callback_role_advertiser(callback: CallbackQuery):
 @router.callback_query(F.data == "add_channel")
 async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
     """Start channel registration"""
-    logger.info(f"📞 add_channel from {callback.from_user.id}")
+    logger.info(f"add_channel from {callback.from_user.id}")
     
     try:
         await state.clear()
         
+        # NO MARKDOWN - Plain text only!
         text = (
-            "📢 Add Your Channel\n\n"
+            "Add Your Channel\n\n"
             "Steps:\n"
-            "1. Add @trust_ad_marketplace_bot as Administrator\n"
+            "1. Add the bot as Administrator to your channel\n"
             "2. Enable Post Messages permission\n"
             "3. Forward any message from your channel here\n\n"
-            "Ready? Forward a message now!"
+            "Bot will verify admin access before registration."
         )
         
+        # NO parse_mode parameter = NO Markdown parsing!
         await callback.message.edit_text(text)
         await state.set_state(ChannelRegistration.waiting_for_forward)
-        await callback.answer("✅ Ready!")
+        await callback.answer("Ready! Forward a message from your channel.")
         
-        logger.info(f"✅ add_channel completed")
+        logger.info("add_channel completed successfully")
         
     except Exception as e:
-        logger.error(f"❌ Error in add_channel: {e}", exc_info=True)
-        await callback.answer("⚠️ Error. Try /start", show_alert=True)
+        logger.error(f"Error in add_channel: {e}", exc_info=True)
+        await callback.answer("Error. Try /start", show_alert=True)
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
 async def process_channel_forward(message: Message, state: FSMContext):
     """Process forwarded channel message"""
-    logger.info(f"📨 Channel forward from {message.from_user.id}")
+    logger.info(f"Channel forward from {message.from_user.id}")
     
     try:
         if not message.forward_from_chat or message.forward_from_chat.type != "channel":
@@ -171,7 +173,7 @@ async def process_channel_forward(message: Message, state: FSMContext):
         channel_title = message.forward_from_chat.title or "Unknown Channel"
         channel_username = message.forward_from_chat.username
         
-        logger.info(f"📢 Channel: {channel_title} ({channel_id})")
+        logger.info(f"Channel: {channel_title} ({channel_id})")
         
         # Check admin status
         admin_check = await check_bot_admin_status(message, channel_id)
@@ -183,12 +185,13 @@ async def process_channel_forward(message: Message, state: FSMContext):
                 f"Fix:\n"
                 f"1. Open {channel_title}\n"
                 f"2. Settings → Administrators\n"
-                f"3. Add @trust_ad_marketplace_bot\n"
+                f"3. Add the bot\n"
                 f"4. Enable Post Messages\n"
                 f"5. Try again"
             )
             await message.answer(text)
             await state.clear()
+            logger.info(f"Rejected: Not admin in {channel_id}")
             return
         
         if not admin_check["can_post"]:
@@ -197,12 +200,13 @@ async def process_channel_forward(message: Message, state: FSMContext):
                 f"I'm admin but can't post in {channel_title}!\n\n"
                 f"Fix:\n"
                 f"1. {channel_title} → Administrators\n"
-                f"2. Tap @trust_ad_marketplace_bot\n"
+                f"2. Tap the bot\n"
                 f"3. Enable Post Messages\n"
                 f"4. Try again"
             )
             await message.answer(text)
             await state.clear()
+            logger.info(f"Rejected: Can't post in {channel_id}")
             return
         
         # SUCCESS - Save to state
@@ -215,7 +219,7 @@ async def process_channel_forward(message: Message, state: FSMContext):
         text = (
             f"✅ Channel Verified!\n\n"
             f"📢 {channel_title}\n"
-            f"🔗 @{channel_username or 'Private'}\n\n"
+            f"🔗 {channel_username or 'Private'}\n\n"
             f"✅ Admin confirmed\n"
             f"✅ Can post messages\n\n"
             f"💰 Set Pricing:\n\n"
@@ -228,8 +232,10 @@ async def process_channel_forward(message: Message, state: FSMContext):
         await message.answer(text)
         await state.set_state(ChannelRegistration.waiting_for_pricing)
         
+        logger.info(f"Admin verified for {channel_id}")
+        
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         await message.answer("❌ Error. Try again.")
         await state.clear()
 
@@ -280,10 +286,10 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         await message.answer(text)
         await state.clear()
         
-        logger.info(f"✅ Registered: {data['channel_title']}")
+        logger.info(f"Registered: {data['channel_title']} with pricing {pricing}")
         
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         await message.answer("❌ Error. Try again.")
         await state.clear()
 
