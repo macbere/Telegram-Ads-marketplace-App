@@ -201,14 +201,16 @@ async def update_user_role(
 
 @app.post("/channels/")
 async def create_channel(
-    owner_telegram_id: int,
-    telegram_channel_id: int,
-    channel_title: str,
-    channel_username: Optional[str] = None,
-    pricing: dict = None,
+    channel_data: dict,
     db: Session = Depends(get_db)
 ):
     """Create a new channel listing"""
+    owner_telegram_id = channel_data.get("owner_telegram_id")
+    telegram_channel_id = channel_data.get("telegram_channel_id")
+    channel_title = channel_data.get("channel_title")
+    channel_username = channel_data.get("channel_username")
+    pricing = channel_data.get("pricing", {})
+    
     logger.info(f"📢 Channel creation: {channel_title} ({telegram_channel_id})")
     
     # Get or create owner
@@ -239,7 +241,7 @@ async def create_channel(
         telegram_channel_id=telegram_channel_id,
         channel_title=channel_title,
         channel_username=channel_username,
-        pricing=pricing or {}
+        pricing=pricing
     )
     db.add(channel)
     db.commit()
@@ -345,13 +347,15 @@ async def get_owner_channels(telegram_id: int, db: Session = Depends(get_db)):
 
 @app.post("/orders/")
 async def create_order(
-    buyer_telegram_id: int,
-    channel_id: int,
-    ad_type: str,
-    price: float,
+    order_data: dict,
     db: Session = Depends(get_db)
 ):
     """Create a new order"""
+    buyer_telegram_id = order_data.get("buyer_telegram_id")
+    channel_id = order_data.get("channel_id")
+    ad_type = order_data.get("ad_type")
+    price = order_data.get("price")
+    
     logger.info(f"🛒 Order creation: channel={channel_id}, type={ad_type}")
     
     # Get or create buyer
@@ -427,12 +431,7 @@ async def get_user_orders(telegram_id: int, db: Session = Depends(get_db)):
 @app.patch("/orders/{order_id}")
 async def update_order(
     order_id: int,
-    status: Optional[str] = None,
-    payment_method: Optional[str] = None,
-    payment_transaction_id: Optional[str] = None,
-    creative_content: Optional[str] = None,
-    creative_media_id: Optional[str] = None,
-    paid_at: Optional[str] = None,
+    update_data: dict,
     db: Session = Depends(get_db)
 ):
     """Update order details"""
@@ -441,18 +440,19 @@ async def update_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    if status:
-        order.status = status
-    if payment_method:
-        order.payment_method = payment_method
-    if payment_transaction_id:
-        order.payment_transaction_id = payment_transaction_id
-    if creative_content:
-        order.creative_content = creative_content
-    if creative_media_id:
-        order.creative_media_id = creative_media_id
-    if paid_at:
-        order.paid_at = datetime.fromisoformat(paid_at)
+    # Update fields from JSON body
+    if "status" in update_data:
+        order.status = update_data["status"]
+    if "payment_method" in update_data:
+        order.payment_method = update_data["payment_method"]
+    if "payment_transaction_id" in update_data:
+        order.payment_transaction_id = update_data["payment_transaction_id"]
+    if "creative_content" in update_data:
+        order.creative_content = update_data["creative_content"]
+    if "creative_media_id" in update_data:
+        order.creative_media_id = update_data["creative_media_id"]
+    if "paid_at" in update_data:
+        order.paid_at = datetime.fromisoformat(update_data["paid_at"])
     
     db.commit()
     db.refresh(order)
