@@ -220,10 +220,10 @@ async def callback_role_channel_owner(callback: CallbackQuery):
     """Handle channel owner role selection - WITH DATABASE"""
     logger.info(f"role_channel_owner from {callback.from_user.id}")
     
-    # Update user role in database
+    # Update user role in database (JSON body)
     await api_request(
         "PATCH", f"/users/{callback.from_user.id}",
-        params={"is_channel_owner": True}
+        json={"is_channel_owner": True}
     )
     
     text = "📢 Channel Owner Menu\n\nList your channels and earn money!"
@@ -236,10 +236,10 @@ async def callback_role_advertiser(callback: CallbackQuery):
     """Handle advertiser role selection - WITH DATABASE"""
     logger.info(f"role_advertiser from {callback.from_user.id}")
     
-    # Update user role in database
+    # Update user role in database (JSON body)
     await api_request(
         "PATCH", f"/users/{callback.from_user.id}",
-        params={"is_advertiser": True}
+        json={"is_advertiser": True}
     )
     
     text = "🎯 Advertiser Menu\n\nFind channels for your ads!"
