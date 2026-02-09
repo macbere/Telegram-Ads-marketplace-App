@@ -4,7 +4,7 @@ Database configuration and initialization
 
 import os
 import logging
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -47,10 +47,10 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Database tables created successfully")
         
-        # Test connection
+        # Test connection (SQLAlchemy 2.0 syntax)
         db = SessionLocal()
         try:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             logger.info("✅ Database connection verified")
         finally:
             db.close()
