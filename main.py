@@ -6,6 +6,7 @@ Complete API endpoints for user and channel management
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, List
@@ -80,8 +81,8 @@ async def root():
 async def health_check(db: Session = Depends(get_db)):
     """Detailed health check"""
     try:
-        # Test database connection
-        db.execute("SELECT 1")
+        # Test database connection (SQLAlchemy 2.0 syntax)
+        db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
