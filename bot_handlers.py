@@ -1,6 +1,6 @@
 """
-Telegram Bot Handlers - WITH DATABASE INTEGRATION (Phase 1)
-Connects to API endpoints for persistent storage
+Telegram Bot Handlers - PHASE 2: PURCHASE FLOW
+Complete implementation with browse, purchase, and order management
 """
 
 import logging
@@ -26,6 +26,11 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:10000")
 class ChannelRegistration(StatesGroup):
     waiting_for_forward = State()
     waiting_for_pricing = State()
+
+
+class PurchaseFlow(StatesGroup):
+    selecting_ad_type = State()
+    confirming_purchase = State()
 
 
 # ============================================================================
@@ -144,7 +149,6 @@ async def cmd_start(message: Message, state: FSMContext):
     
     if "error" in result:
         logger.error(f"User registration failed: {result['error']}")
-        # Fallback to basic menu
         is_owner = False
         is_advertiser = False
     else:
@@ -458,10 +462,16 @@ async def callback_my_channels(callback: CallbackQuery):
     await callback.answer()
 
 
+# ============================================================================
+# BROWSE CHANNELS - PHASE 2 ENHANCED
+# ============================================================================
+
 @router.callback_query(F.data == "browse_channels")
-async def callback_browse_channels(callback: CallbackQuery):
-    """Browse channels - FROM DATABASE"""
+async def callback_browse_channels(callback: CallbackQuery, state: FSMContext):
+    """Browse channels - ENHANCED WITH PURCHASE BUTTONS"""
     logger.info(f"browse_channels from {callback.from_user.id}")
+    
+    await state.clear()
     
     # Fetch channels from database
     channels = await api_request("GET", "/channels/")
@@ -472,51 +482,303 @@ async def callback_browse_channels(callback: CallbackQuery):
         await callback.answer()
         return
     
-    # Show channels
-    text = f"🔍 Available Channels ({len(channels)} total)\n\n"
-    for channel in channels[:5]:
-        pricing = channel.get("pricing", {})
-        pricing_text = ", ".join([f"{k}: ${v}" for k, v in pricing.items()])
-        text += f"📢 {channel['channel_title']}\n"
-        text += f"   💰 {pricing_text}\n"
-        text += f"   👥 {channel.get('subscribers', 0):,} subscribers\n\n"
-    
-    if len(channels) > 5:
-        text += f"...and {len(channels) - 5} more channels!"
-    
-    await callback.message.edit_text(text)
+    # Show first channel with purchase option
+    await show_channel_detail(callback.message, channels[0], 0, len(channels), callback.from_user.id)
     await callback.answer()
 
 
+async def show_channel_detail(message, channel: dict, index: int, total: int, user_id: int):
+    """Show detailed channel view with purchase button"""
+    pricing = channel.get("pricing", {})
+    
+    # Build pricing display
+    pricing_lines = []
+    for ad_type, price in pricing.items():
+        pricing_lines.append(f"  • {ad_type.capitalize()}: ${price}")
+    
+    pricing_text = "\n".join(pricing_lines) if pricing_lines else "  No pricing set"
+    
+    text = (
+        f"📢 Channel {index + 1} of {total}\n\n"
+        f"Channel: {channel['channel_title']}\n"
+        f"Username: @{channel.get('channel_username', 'Private')}\n"
+        f"👥 Subscribers: {channel.get('subscribers', 0):,}\n"
+        f"👀 Avg Views: {channel.get('avg_views', 0):,}\n\n"
+        f"💰 Pricing:\n{pricing_text}\n\n"
+        f"Status: {channel['status']}"
+    )
+    
+    # Build navigation keyboard
+    keyboard = []
+    
+    # Purchase button
+    keyboard.append([InlineKeyboardButton(
+        text="🛒 Purchase Ad",
+        callback_data=f"purchase_channel_{channel['id']}"
+    )])
+    
+    # Navigation buttons
+    nav_row = []
+    if index > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Previous", callback_data=f"channel_nav_{index-1}"))
+    if index < total - 1:
+        nav_row.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"channel_nav_{index+1}"))
+    
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    # Back button
+    keyboard.append([InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")])
+    
+    await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+
+
+@router.callback_query(F.data.startswith("channel_nav_"))
+async def callback_channel_navigation(callback: CallbackQuery):
+    """Handle channel navigation"""
+    index = int(callback.data.split("_")[-1])
+    
+    # Fetch channels
+    channels = await api_request("GET", "/channels/")
+    
+    if "error" not in channels and isinstance(channels, list) and len(channels) > index:
+        await show_channel_detail(callback.message, channels[index], index, len(channels), callback.from_user.id)
+    
+    await callback.answer()
+
+
+# ============================================================================
+# PURCHASE FLOW - PHASE 2
+# ============================================================================
+
+@router.callback_query(F.data.startswith("purchase_channel_"))
+async def callback_purchase_channel(callback: CallbackQuery, state: FSMContext):
+    """Start purchase flow for a channel"""
+    channel_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Purchase initiated for channel {channel_id} by user {callback.from_user.id}")
+    
+    # Fetch channel details
+    channel = await api_request("GET", f"/channels/{channel_id}")
+    
+    if "error" in channel:
+        await callback.answer("❌ Channel not found!", show_alert=True)
+        return
+    
+    # Save channel to state
+    await state.update_data(
+        channel_id=channel_id,
+        channel_title=channel['channel_title'],
+        pricing=channel['pricing']
+    )
+    
+    # Show ad type selection
+    pricing = channel['pricing']
+    
+    text = (
+        f"🛒 Purchase Ad Slot\n\n"
+        f"📢 {channel['channel_title']}\n\n"
+        f"Select ad type:"
+    )
+    
+    keyboard = []
+    for ad_type, price in pricing.items():
+        keyboard.append([InlineKeyboardButton(
+            text=f"{ad_type.capitalize()} - ${price}",
+            callback_data=f"select_adtype_{ad_type}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(text="❌ Cancel", callback_data="browse_channels")])
+    
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    await state.set_state(PurchaseFlow.selecting_ad_type)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("select_adtype_"), StateFilter(PurchaseFlow.selecting_ad_type))
+async def callback_select_ad_type(callback: CallbackQuery, state: FSMContext):
+    """Handle ad type selection"""
+    ad_type = callback.data.split("_")[-1]
+    
+    # Get state data
+    data = await state.get_data()
+    pricing = data.get('pricing', {})
+    price = pricing.get(ad_type, 0)
+    
+    # Update state
+    await state.update_data(ad_type=ad_type, price=price)
+    
+    text = (
+        f"📋 Confirm Purchase\n\n"
+        f"📢 Channel: {data['channel_title']}\n"
+        f"📺 Ad Type: {ad_type.capitalize()}\n"
+        f"💰 Price: ${price}\n\n"
+        f"Confirm this order?"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Confirm Order", callback_data="confirm_purchase")],
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="browse_channels")]
+    ]
+    
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    await state.set_state(PurchaseFlow.confirming_purchase)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "confirm_purchase", StateFilter(PurchaseFlow.confirming_purchase))
+async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
+    """Confirm and create order"""
+    data = await state.get_data()
+    
+    logger.info(f"Creating order: channel={data['channel_id']}, type={data['ad_type']}, price={data['price']}")
+    
+    # Create order in database
+    result = await api_request(
+        "POST", "/orders/",
+        json={
+            "buyer_telegram_id": callback.from_user.id,
+            "channel_id": data['channel_id'],
+            "ad_type": data['ad_type'],
+            "price": data['price']
+        }
+    )
+    
+    if "error" in result:
+        text = f"❌ Order creation failed!\n\n{result.get('error')}"
+        keyboard = [[InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]]
+    else:
+        order_id = result.get('id')
+        
+        text = (
+            f"🎉 Order Created!\n\n"
+            f"Order ID: #{order_id}\n"
+            f"📢 Channel: {data['channel_title']}\n"
+            f"📺 Ad Type: {data['ad_type'].capitalize()}\n"
+            f"💰 Price: ${data['price']}\n\n"
+            f"Status: Pending Payment\n\n"
+            f"Next: Complete payment to activate your order."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton(text="💳 Simulate Payment", callback_data=f"pay_order_{order_id}")],
+            [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
+            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        ]
+        
+        logger.info(f"✅ Order created: {order_id}")
+    
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    await state.clear()
+    await callback.answer()
+
+
+# ============================================================================
+# PAYMENT SIMULATION - PHASE 2
+# ============================================================================
+
+@router.callback_query(F.data.startswith("pay_order_"))
+async def callback_pay_order(callback: CallbackQuery):
+    """Simulate payment for an order"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Payment simulation for order {order_id}")
+    
+    # Update order status to paid
+    from datetime import datetime
+    result = await api_request(
+        "PATCH", f"/orders/{order_id}",
+        json={
+            "status": "paid",
+            "payment_method": "simulated",
+            "payment_transaction_id": f"SIM{order_id}_{int(datetime.now().timestamp())}",
+            "paid_at": datetime.utcnow().isoformat()
+        }
+    )
+    
+    if "error" in result:
+        text = f"❌ Payment failed!\n\n{result.get('error')}"
+    else:
+        text = (
+            f"✅ Payment Successful!\n\n"
+            f"Order ID: #{order_id}\n"
+            f"Status: Paid\n"
+            f"Transaction: {result.get('payment_transaction_id', 'N/A')}\n\n"
+            f"Your order is now being processed.\n"
+            f"The channel owner will be notified."
+        )
+        
+        logger.info(f"✅ Order {order_id} paid successfully")
+    
+    keyboard = [
+        [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+    ]
+    
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    await callback.answer("💳 Payment processed!")
+
+
+# ============================================================================
+# ORDER MANAGEMENT - PHASE 2 ENHANCED
+# ============================================================================
+
 @router.callback_query(F.data == "my_orders")
 async def callback_my_orders(callback: CallbackQuery):
-    """Show user's orders - FROM DATABASE"""
+    """Show user's orders - ENHANCED FROM DATABASE"""
     logger.info(f"my_orders from {callback.from_user.id}")
     
     # Fetch orders from database
     orders = await api_request("GET", f"/orders/user/{callback.from_user.id}")
     
     if "error" in orders or not orders:
-        text = "🛒 My Orders\n\nYou haven't placed any orders yet.\n\nBrowse channels to get started!"
+        text = (
+            "🛒 My Orders\n\n"
+            "You haven't placed any orders yet.\n\n"
+            "Browse channels to get started!"
+        )
+        keyboard = [
+            [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
+            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        ]
     else:
         text = f"🛒 My Orders ({len(orders)} total)\n\n"
+        
         for order in orders[:10]:
             status_emoji = {
                 "pending_payment": "⏳",
                 "paid": "✅",
                 "processing": "🔄",
                 "completed": "✅",
-                "cancelled": "❌"
+                "cancelled": "❌",
+                "refunded": "💰"
             }.get(order["status"], "❓")
             
             text += f"{status_emoji} Order #{order['id']}\n"
-            text += f"   Type: {order['ad_type']}\n"
+            text += f"   Type: {order['ad_type'].capitalize()}\n"
             text += f"   Price: ${order['price']}\n"
-            text += f"   Status: {order['status']}\n\n"
+            text += f"   Status: {order['status'].replace('_', ' ').title()}\n"
+            
+            if order.get('payment_transaction_id'):
+                text += f"   TX: {order['payment_transaction_id']}\n"
+            
+            text += "\n"
+        
+        if len(orders) > 10:
+            text += f"...and {len(orders) - 10} more orders"
+        
+        keyboard = [
+            [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
+            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        ]
     
-    await callback.message.edit_text(text)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     await callback.answer()
 
+
+# ============================================================================
+# MAIN MENU
+# ============================================================================
 
 @router.callback_query(F.data == "main_menu")
 async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
@@ -545,4 +807,4 @@ def setup_handlers(dp):
     """Register handlers"""
     dp.include_router(router)
     logger.info("✅ Router registered with dispatcher")
-    logger.info("📝 Registered handlers with DATABASE INTEGRATION")
+    logger.info("📝 Registered handlers with PHASE 2: PURCHASE FLOW")
