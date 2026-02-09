@@ -168,8 +168,7 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
 @app.patch("/users/{telegram_id}")
 async def update_user_role(
     telegram_id: int,
-    is_channel_owner: Optional[bool] = None,
-    is_advertiser: Optional[bool] = None,
+    update_data: dict,
     db: Session = Depends(get_db)
 ):
     """Update user roles"""
@@ -178,11 +177,12 @@ async def update_user_role(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    if is_channel_owner is not None:
-        user.is_channel_owner = is_channel_owner
+    # Update roles from JSON body
+    if "is_channel_owner" in update_data:
+        user.is_channel_owner = update_data["is_channel_owner"]
     
-    if is_advertiser is not None:
-        user.is_advertiser = is_advertiser
+    if "is_advertiser" in update_data:
+        user.is_advertiser = update_data["is_advertiser"]
     
     db.commit()
     db.refresh(user)
