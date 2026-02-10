@@ -4,6 +4,7 @@ Complete implementation with browse, purchase, and order management
 """
 
 import logging
+from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -645,17 +646,17 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     )
     
     if "error" in result:
-        text = f"❌ Order creation failed!\n\n{result.get('error')}"
+        text = f"Order creation failed!\n\n{result.get('error')}"
         keyboard = [[InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]]
     else:
         order_id = result.get('id')
         
         text = (
-            f"🎉 Order Created!\n\n"
-            f"Order ID: #{order_id}\n"
-            f"📢 Channel: {data['channel_title']}\n"
-            f"📺 Ad Type: {data['ad_type'].capitalize()}\n"
-            f"💰 Price: ${data['price']}\n\n"
+            f"Order Created!\n\n"
+            f"Order ID: {order_id}\n"
+            f"Channel: {data['channel_title']}\n"
+            f"Ad Type: {data['ad_type'].capitalize()}\n"
+            f"Price: ${data['price']}\n\n"
             f"Status: Pending Payment\n\n"
             f"Next: Complete payment to activate your order."
         )
@@ -666,7 +667,7 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
         ]
         
-        logger.info(f"✅ Order created: {order_id}")
+        logger.info(f"Order created: {order_id}")
     
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     await state.clear()
@@ -680,35 +681,36 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("pay_order_"))
 async def callback_pay_order(callback: CallbackQuery):
     """Simulate payment for an order"""
+    from datetime import datetime
     order_id = int(callback.data.split("_")[-1])
     
     logger.info(f"Payment simulation for order {order_id}")
     
     # Update order status to paid
-    from datetime import datetime
     result = await api_request(
         "PATCH", f"/orders/{order_id}",
         json={
             "status": "paid",
             "payment_method": "simulated",
-            "payment_transaction_id": f"SIM{order_id}_{int(datetime.now().timestamp())}",
+            "payment_transaction_id": f"SIM{order_id}_{int(datetime.utcnow().timestamp())}",
             "paid_at": datetime.utcnow().isoformat()
         }
     )
     
     if "error" in result:
-        text = f"❌ Payment failed!\n\n{result.get('error')}"
+        text = f"Payment failed!\n\n{result.get('error')}"
+        logger.error(f"Payment failed for order {order_id}: {result.get('error')}")
     else:
         text = (
-            f"✅ Payment Successful!\n\n"
-            f"Order ID: #{order_id}\n"
+            f"Payment Successful!\n\n"
+            f"Order ID: {order_id}\n"
             f"Status: Paid\n"
             f"Transaction: {result.get('payment_transaction_id', 'N/A')}\n\n"
             f"Your order is now being processed.\n"
             f"The channel owner will be notified."
         )
         
-        logger.info(f"✅ Order {order_id} paid successfully")
+        logger.info(f"Order {order_id} paid successfully")
     
     keyboard = [
         [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
@@ -716,7 +718,7 @@ async def callback_pay_order(callback: CallbackQuery):
     ]
     
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
-    await callback.answer("💳 Payment processed!")
+    await callback.answer("Payment processed!")
 
 
 # ============================================================================
@@ -754,7 +756,7 @@ async def callback_my_orders(callback: CallbackQuery):
                 "refunded": "💰"
             }.get(order["status"], "❓")
             
-            text += f"{status_emoji} Order #{order['id']}\n"
+            text += f"{status_emoji} Order {order['id']}\n"
             text += f"   Type: {order['ad_type'].capitalize()}\n"
             text += f"   Price: ${order['price']}\n"
             text += f"   Status: {order['status'].replace('_', ' ').title()}\n"
