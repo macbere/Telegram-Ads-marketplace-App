@@ -768,9 +768,8 @@ async def callback_pay_order(callback: CallbackQuery):
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
-        # Ultra safe fallback - no formatting at all
-        safe_text = f"Payment successful for order {order_id} - Go to My Orders to submit creative"
-        await callback.message.answer(safe_text)
+        # Ultra safe fallback - absolute bare minimum
+        await callback.message.answer(f"Payment complete - Order {order_id} - Check My Orders")
     
     await callback.answer()
 
