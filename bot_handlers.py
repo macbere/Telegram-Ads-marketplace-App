@@ -747,8 +747,7 @@ async def callback_pay_order(callback: CallbackQuery):
         text = (
             "PAYMENT SUCCESSFUL\n\n"
             f"Order ID {order_id}\n"
-            f"Status Paid\n"
-            f"Transaction {tx_id}\n\n"
+            f"Status Paid\n\n"
             "Your order is now being processed\n"
             "Next step Submit your ad creative\n\n"
             "Go to My Orders to submit creative"
