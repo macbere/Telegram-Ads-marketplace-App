@@ -226,14 +226,18 @@ async def callback_role_channel_owner(callback: CallbackQuery):
     logger.info(f"role_channel_owner from {callback.from_user.id}")
     
     # Update user role in database (JSON body)
-    await api_request(
+    result = await api_request(
         "PATCH", f"/users/{callback.from_user.id}",
         json={"is_channel_owner": True}
     )
     
-    text = "📢 Channel Owner Menu\n\nList your channels and earn money!"
+    if "error" in result:
+        await callback.answer("Failed to update role. Try again.", show_alert=True)
+    else:
+        await callback.answer("✅ Role updated! You are now a Channel Owner.", show_alert=False)
+    
+    text = "Channel Owner Menu\n\nList your channels and earn money!"
     await callback.message.edit_text(text, reply_markup=create_channel_owner_menu())
-    await callback.answer()
 
 
 @router.callback_query(F.data == "role_advertiser")
@@ -242,14 +246,18 @@ async def callback_role_advertiser(callback: CallbackQuery):
     logger.info(f"role_advertiser from {callback.from_user.id}")
     
     # Update user role in database (JSON body)
-    await api_request(
+    result = await api_request(
         "PATCH", f"/users/{callback.from_user.id}",
         json={"is_advertiser": True}
     )
     
-    text = "🎯 Advertiser Menu\n\nFind channels for your ads!"
+    if "error" in result:
+        await callback.answer("Failed to update role. Try again.", show_alert=True)
+    else:
+        await callback.answer("✅ Role updated! You are now an Advertiser.", show_alert=False)
+    
+    text = "Advertiser Menu\n\nFind channels for your ads!"
     await callback.message.edit_text(text, reply_markup=create_advertiser_menu())
-    await callback.answer()
 
 
 # ============================================================================
@@ -414,21 +422,24 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
         if "error" in result:
             if "already exists" in str(result.get("error", "")).lower():
-                await message.answer(f"ℹ️ {data['channel_title']} already listed in database!")
+                await message.answer(f"{data['channel_title']} already listed in database!")
             else:
-                await message.answer(f"❌ Database error: {result.get('error')}")
+                await message.answer(f"Database error: {result.get('error')}\n\nPlease try again.")
         else:
-            pricing_str = "\n".join([f"• {k}: ${v}" for k, v in pricing.items()])
+            pricing_str = "\n".join([f"• {k}: {v} USD" for k, v in pricing.items()])
             
             text = (
-                f"🎉 Channel Saved to Database!\n\n"
-                f"📢 {data['channel_title']}\n"
-                f"💰 Pricing:\n{pricing_str}\n\n"
-                f"✅ Stored permanently!\n"
-                f"Database ID: #{result.get('id')}"
+                f"Channel Saved to Database!\n\n"
+                f"Channel: {data['channel_title']}\n"
+                f"Pricing:\n{pricing_str}\n\n"
+                f"Stored permanently!\n"
+                f"Database ID: {result.get('id')}"
             )
             
             await message.answer(text)
+            
+            # Show success notification
+            await message.answer("✅ SUCCESS! Your channel is now live in the marketplace!")
         
         await state.clear()
         
@@ -454,9 +465,9 @@ async def callback_my_channels(callback: CallbackQuery):
         text = f"📊 My Channels ({len(channels)} total)\n\n"
         for channel in channels[:10]:
             pricing = channel.get("pricing", {})
-            pricing_text = ", ".join([f"{k}: ${v}" for k, v in pricing.items()])
-            text += f"📢 {channel['channel_title']}\n"
-            text += f"   💰 {pricing_text}\n"
+            pricing_text = ", ".join([f"{k}: {v} USD" for k, v in pricing.items()])
+            text += f"Channel: {channel['channel_title']}\n"
+            text += f"   Pricing: {pricing_text}\n"
             text += f"   Status: {channel['status']}\n\n"
     
     await callback.message.edit_text(text)
@@ -495,17 +506,17 @@ async def show_channel_detail(message, channel: dict, index: int, total: int, us
     # Build pricing display
     pricing_lines = []
     for ad_type, price in pricing.items():
-        pricing_lines.append(f"  • {ad_type.capitalize()}: ${price}")
+        pricing_lines.append(f"  • {ad_type.capitalize()}: {price} USD")
     
     pricing_text = "\n".join(pricing_lines) if pricing_lines else "  No pricing set"
     
     text = (
-        f"📢 Channel {index + 1} of {total}\n\n"
+        f"Channel {index + 1} of {total}\n\n"
         f"Channel: {channel['channel_title']}\n"
         f"Username: @{channel.get('channel_username', 'Private')}\n"
-        f"👥 Subscribers: {channel.get('subscribers', 0):,}\n"
-        f"👀 Avg Views: {channel.get('avg_views', 0):,}\n\n"
-        f"💰 Pricing:\n{pricing_text}\n\n"
+        f"Subscribers: {channel.get('subscribers', 0):,}\n"
+        f"Avg Views: {channel.get('avg_views', 0):,}\n\n"
+        f"Pricing:\n{pricing_text}\n\n"
         f"Status: {channel['status']}"
     )
     
@@ -585,11 +596,11 @@ async def callback_purchase_channel(callback: CallbackQuery, state: FSMContext):
     keyboard = []
     for ad_type, price in pricing.items():
         keyboard.append([InlineKeyboardButton(
-            text=f"{ad_type.capitalize()} - ${price}",
+            text=f"{ad_type.capitalize()} - {price} USD",
             callback_data=f"select_adtype_{ad_type}"
         )])
     
-    keyboard.append([InlineKeyboardButton(text="❌ Cancel", callback_data="browse_channels")])
+    keyboard.append([InlineKeyboardButton(text="Cancel", callback_data="browse_channels")])
     
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     await state.set_state(PurchaseFlow.selecting_ad_type)
@@ -610,16 +621,16 @@ async def callback_select_ad_type(callback: CallbackQuery, state: FSMContext):
     await state.update_data(ad_type=ad_type, price=price)
     
     text = (
-        f"📋 Confirm Purchase\n\n"
-        f"📢 Channel: {data['channel_title']}\n"
-        f"📺 Ad Type: {ad_type.capitalize()}\n"
-        f"💰 Price: ${price}\n\n"
+        f"Confirm Purchase\n\n"
+        f"Channel: {data['channel_title']}\n"
+        f"Ad Type: {ad_type.capitalize()}\n"
+        f"Price: {price} USD\n\n"
         f"Confirm this order?"
     )
     
     keyboard = [
-        [InlineKeyboardButton(text="✅ Confirm Order", callback_data="confirm_purchase")],
-        [InlineKeyboardButton(text="❌ Cancel", callback_data="browse_channels")]
+        [InlineKeyboardButton(text="Confirm Order", callback_data="confirm_purchase")],
+        [InlineKeyboardButton(text="Cancel", callback_data="browse_channels")]
     ]
     
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
@@ -634,6 +645,9 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     
     logger.info(f"Creating order: channel={data['channel_id']}, type={data['ad_type']}, price={data['price']}")
     
+    # Show processing notification
+    await callback.answer("Creating your order...", show_alert=False)
+    
     # Create order in database
     result = await api_request(
         "POST", "/orders/",
@@ -646,32 +660,38 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     )
     
     if "error" in result:
-        text = f"Order creation failed!\n\n{result.get('error')}"
-        keyboard = [[InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]]
+        text = f"ORDER CREATION FAILED!\n\n{result.get('error')}\n\nPlease try again."
+        keyboard = [[InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]]
+        await callback.answer("Order creation failed!", show_alert=True)
     else:
         order_id = result.get('id')
         
         text = (
-            f"Order Created!\n\n"
+            "ORDER CREATED SUCCESSFULLY!\n\n"
             f"Order ID: {order_id}\n"
             f"Channel: {data['channel_title']}\n"
             f"Ad Type: {data['ad_type'].capitalize()}\n"
-            f"Price: ${data['price']}\n\n"
+            f"Price: {data['price']} USD\n\n"
             f"Status: Pending Payment\n\n"
             f"Next: Complete payment to activate your order."
         )
         
         keyboard = [
-            [InlineKeyboardButton(text="💳 Simulate Payment", callback_data=f"pay_order_{order_id}")],
-            [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+            [InlineKeyboardButton(text="Simulate Payment", callback_data=f"pay_order_{order_id}")],
+            [InlineKeyboardButton(text="My Orders", callback_data="my_orders")],
+            [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
         ]
         
         logger.info(f"Order created: {order_id}")
+        await callback.answer("✅ Order created! Proceed to payment.", show_alert=True)
     
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    try:
+        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to update message: {e}")
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    
     await state.clear()
-    await callback.answer()
 
 
 # ============================================================================
@@ -686,6 +706,9 @@ async def callback_pay_order(callback: CallbackQuery):
     
     logger.info(f"Payment simulation for order {order_id}")
     
+    # Show processing notification
+    await callback.answer("Processing payment...", show_alert=False)
+    
     # Update order status to paid
     result = await api_request(
         "PATCH", f"/orders/{order_id}",
@@ -698,27 +721,43 @@ async def callback_pay_order(callback: CallbackQuery):
     )
     
     if "error" in result:
-        text = f"Payment failed!\n\n{result.get('error')}"
-        logger.error(f"Payment failed for order {order_id}: {result.get('error')}")
-    else:
         text = (
-            f"Payment Successful!\n\n"
+            "PAYMENT FAILED!\n\n"
+            f"Order ID: {order_id}\n"
+            f"Error: {result.get('error')}\n\n"
+            "Please try again or contact support."
+        )
+        logger.error(f"Payment failed for order {order_id}: {result.get('error')}")
+        
+        # Show error notification
+        await callback.answer("Payment failed! Please try again.", show_alert=True)
+    else:
+        tx_id = result.get('payment_transaction_id', 'N/A')
+        text = (
+            "PAYMENT SUCCESSFUL!\n\n"
             f"Order ID: {order_id}\n"
             f"Status: Paid\n"
-            f"Transaction: {result.get('payment_transaction_id', 'N/A')}\n\n"
-            f"Your order is now being processed.\n"
-            f"The channel owner will be notified."
+            f"Transaction: {tx_id}\n\n"
+            "Your order is now being processed.\n"
+            "The channel owner will be notified."
         )
         
         logger.info(f"Order {order_id} paid successfully")
+        
+        # Show success notification with alert
+        await callback.answer("✅ Payment successful! Your order is confirmed.", show_alert=True)
     
     keyboard = [
-        [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        [InlineKeyboardButton(text="My Orders", callback_data="my_orders")],
+        [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
     ]
     
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
-    await callback.answer("Payment processed!")
+    try:
+        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to update message: {e}")
+        # If edit fails, send new message
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
 
 
 # ============================================================================
@@ -758,7 +797,7 @@ async def callback_my_orders(callback: CallbackQuery):
             
             text += f"{status_emoji} Order {order['id']}\n"
             text += f"   Type: {order['ad_type'].capitalize()}\n"
-            text += f"   Price: ${order['price']}\n"
+            text += f"   Price: {order['price']} USD\n"
             text += f"   Status: {order['status'].replace('_', ' ').title()}\n"
             
             if order.get('payment_transaction_id'):
