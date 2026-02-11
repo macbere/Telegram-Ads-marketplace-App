@@ -629,9 +629,9 @@ async def callback_select_ad_type(callback: CallbackQuery, state: FSMContext):
     
     text = (
         f"Confirm Purchase\n\n"
-        f"Channel: {data['channel_title']}\n"
-        f"Ad Type: {ad_type.capitalize()}\n"
-        f"Price: {price} USD\n\n"
+        f"Channel {data['channel_title']}\n"
+        f"Ad Type {ad_type.capitalize()}\n"
+        f"Price {price} USD\n\n"
         f"Confirm this order?"
     )
     
@@ -674,12 +674,12 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
         
         text = (
             "ORDER CREATED SUCCESSFULLY\n\n"
-            f"Order ID: {order_id}\n"
-            f"Channel: {data['channel_title']}\n"
-            f"Ad Type: {data['ad_type'].capitalize()}\n"
-            f"Price: {data['price']} USD\n\n"
-            f"Status: Pending Payment\n\n"
-            f"Next: Complete payment to activate your order"
+            f"Order ID {order_id}\n"
+            f"Channel {data['channel_title']}\n"
+            f"Ad Type {data['ad_type'].capitalize()}\n"
+            f"Price {data['price']} USD\n\n"
+            f"Status Pending Payment\n\n"
+            f"Next Complete payment to activate your order"
         )
         
         keyboard = [
@@ -693,6 +693,10 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     
     try:
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        safe_text = f"Order {order_id} created successfully - Click Simulate Payment button"
+        await callback.message.answer(safe_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
         await callback.message.answer(text)
@@ -729,8 +733,8 @@ async def callback_pay_order(callback: CallbackQuery):
         error_msg = str(result.get('error', 'Unknown error'))
         text = (
             "PAYMENT FAILED\n\n"
-            f"Order ID: {order_id}\n"
-            f"Error: {error_msg}\n\n"
+            f"Order ID {order_id}\n"
+            f"Error {error_msg}\n\n"
             "Please try again or contact support"
         )
         logger.error(f"Payment failed for order {order_id}: {error_msg}")
@@ -742,11 +746,11 @@ async def callback_pay_order(callback: CallbackQuery):
         tx_id = result.get('payment_transaction_id', 'N/A')
         text = (
             "PAYMENT SUCCESSFUL\n\n"
-            f"Order ID: {order_id}\n"
-            f"Status: Paid\n"
-            f"Transaction: {tx_id}\n\n"
+            f"Order ID {order_id}\n"
+            f"Status Paid\n"
+            f"Transaction {tx_id}\n\n"
             "Your order is now being processed\n"
-            "Next step: Submit your ad creative\n\n"
+            "Next step Submit your ad creative\n\n"
             "Go to My Orders to submit creative"
         )
         
@@ -764,7 +768,9 @@ async def callback_pay_order(callback: CallbackQuery):
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
-        await callback.message.answer(text)
+        # Ultra safe fallback - no formatting at all
+        safe_text = f"Payment successful for order {order_id} - Go to My Orders to submit creative"
+        await callback.message.answer(safe_text)
     
     await callback.answer()
 
@@ -809,8 +815,8 @@ async def callback_my_orders(callback: CallbackQuery):
             }.get(order["status"], "Unknown")
             
             text += f"Order {order['id']} - {order['ad_type'].capitalize()}\n"
-            text += f"Status: {status_emoji}\n"
-            text += f"Price: {order['price']} USD\n\n"
+            text += f"Status {status_emoji}\n"
+            text += f"Price {order['price']} USD\n\n"
             
             # Add action button based on status
             if order["status"] == "paid":
@@ -938,12 +944,12 @@ async def process_creative_media(message: Message, state: FSMContext):
     )
     
     if "error" in result:
-        await message.answer(f"Failed to submit creative: {result.get('error')}")
+        await message.answer(f"Failed to submit creative - {result.get('error')}")
     else:
         text = (
             f"CREATIVE SUBMITTED SUCCESSFULLY\n\n"
-            f"Order ID: {order_id}\n"
-            f"Status: Waiting for approval\n\n"
+            f"Order ID {order_id}\n"
+            f"Status Waiting for approval\n\n"
             f"The channel owner will review your creative\n"
             f"You will be notified when it is approved"
         )
@@ -994,8 +1000,8 @@ async def callback_pending_orders(callback: CallbackQuery):
         
         for order in all_orders[:5]:
             text += f"Order {order['id']} - {order['ad_type'].capitalize()}\n"
-            text += f"Price: {order['price']} USD\n"
-            text += f"Status: Creative Submitted\n\n"
+            text += f"Price {order['price']} USD\n"
+            text += f"Status Creative Submitted\n\n"
             
             keyboard.append([InlineKeyboardButton(
                 text=f"Review Order {order['id']}",
@@ -1030,10 +1036,10 @@ async def callback_review_order(callback: CallbackQuery):
     
     text = (
         f"Review Order {order_id}\n\n"
-        f"Ad Type: {order['ad_type'].capitalize()}\n"
-        f"Price: {order['price']} USD\n\n"
-        f"Ad Text:\n{order.get('creative_content', 'No text')}\n\n"
-        f"Media: {'Yes' if order.get('creative_media_id') else 'No'}\n\n"
+        f"Ad Type {order['ad_type'].capitalize()}\n"
+        f"Price {order['price']} USD\n\n"
+        f"Ad Text\n{order.get('creative_content', 'No text')}\n\n"
+        f"Media {'Yes' if order.get('creative_media_id') else 'No'}\n\n"
         f"Approve or reject this creative?"
     )
     
@@ -1055,8 +1061,10 @@ async def callback_review_order(callback: CallbackQuery):
     
     try:
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        safe_text = f"Review Order {order_id} - {order['ad_type']} - {order['price']} USD"
+        await callback.message.answer(safe_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     
     await callback.answer()
 
@@ -1185,24 +1193,30 @@ async def callback_view_order(callback: CallbackQuery):
     
     text = (
         f"Order Details\n\n"
-        f"Order ID: {order['id']}\n"
-        f"Ad Type: {order['ad_type'].capitalize()}\n"
-        f"Price: {order['price']} USD\n"
-        f"Status: {status_text}\n\n"
+        f"Order ID {order['id']}\n"
+        f"Ad Type {order['ad_type'].capitalize()}\n"
+        f"Price {order['price']} USD\n"
+        f"Status {status_text}\n\n"
     )
     
     if order.get('creative_content'):
-        text += f"Ad Text:\n{order['creative_content']}\n\n"
+        text += f"Ad Text\n{order['creative_content']}\n\n"
     
     if order.get('post_url'):
-        text += f"Post URL: {order['post_url']}\n\n"
+        text += f"Post URL {order['post_url']}\n\n"
     
     if order.get('payment_transaction_id'):
-        text += f"Transaction: {order['payment_transaction_id']}\n"
+        text += f"Transaction {order['payment_transaction_id']}\n"
     
     keyboard = [[InlineKeyboardButton(text="My Orders", callback_data="my_orders")]]
     
-    await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    try:
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        safe_text = f"Order {order['id']} - Status {status_text}"
+        await callback.message.answer(safe_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    
     await callback.answer()
 
 
