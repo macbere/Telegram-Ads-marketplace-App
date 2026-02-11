@@ -645,9 +645,6 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     
     logger.info(f"Creating order: channel={data['channel_id']}, type={data['ad_type']}, price={data['price']}")
     
-    # Show processing notification
-    await callback.answer("Creating your order...", show_alert=False)
-    
     # Create order in database
     result = await api_request(
         "POST", "/orders/",
@@ -660,20 +657,23 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
     )
     
     if "error" in result:
-        text = f"ORDER CREATION FAILED!\n\n{result.get('error')}\n\nPlease try again."
+        error_msg = str(result.get('error', 'Unknown error'))
+        text = f"ORDER CREATION FAILED\n\n{error_msg}\n\nPlease try again"
         keyboard = [[InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]]
-        await callback.answer("Order creation failed!", show_alert=True)
+        
+        # Send CLEAR failure notification
+        await callback.message.answer("FAILED - Could not create order - Please try again")
     else:
         order_id = result.get('id')
         
         text = (
-            "ORDER CREATED SUCCESSFULLY!\n\n"
+            "ORDER CREATED SUCCESSFULLY\n\n"
             f"Order ID: {order_id}\n"
             f"Channel: {data['channel_title']}\n"
             f"Ad Type: {data['ad_type'].capitalize()}\n"
             f"Price: {data['price']} USD\n\n"
             f"Status: Pending Payment\n\n"
-            f"Next: Complete payment to activate your order."
+            f"Next: Complete payment to activate your order"
         )
         
         keyboard = [
@@ -683,15 +683,18 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
         ]
         
         logger.info(f"Order created: {order_id}")
-        await callback.answer("✅ Order created! Proceed to payment.", show_alert=True)
+        
+        # Send CLEAR success notification
+        await callback.message.answer("SUCCESS - Order created - Proceed to payment")
     
     try:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
-    except Exception as e:
-        logger.error(f"Failed to update message: {e}")
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        await callback.message.answer(text)
     
     await state.clear()
+    await callback.answer()
 
 
 # ============================================================================
@@ -706,9 +709,6 @@ async def callback_pay_order(callback: CallbackQuery):
     
     logger.info(f"Payment simulation for order {order_id}")
     
-    # Show processing notification
-    await callback.answer("Processing payment...", show_alert=False)
-    
     # Update order status to paid
     result = await api_request(
         "PATCH", f"/orders/{order_id}",
@@ -721,43 +721,50 @@ async def callback_pay_order(callback: CallbackQuery):
     )
     
     if "error" in result:
+        # Payment failed
+        error_msg = str(result.get('error', 'Unknown error'))
         text = (
-            "PAYMENT FAILED!\n\n"
+            "PAYMENT FAILED\n\n"
             f"Order ID: {order_id}\n"
-            f"Error: {result.get('error')}\n\n"
+            f"Error: {error_msg}\n\n"
             "Please try again or contact support."
         )
-        logger.error(f"Payment failed for order {order_id}: {result.get('error')}")
+        logger.error(f"Payment failed for order {order_id}: {error_msg}")
         
-        # Show error notification
-        await callback.answer("Payment failed! Please try again.", show_alert=True)
+        # Send CLEAR notification as separate message
+        await callback.message.answer("PAYMENT FAILED - Please try again")
+        
     else:
+        # Payment successful
         tx_id = result.get('payment_transaction_id', 'N/A')
         text = (
-            "PAYMENT SUCCESSFUL!\n\n"
+            "PAYMENT SUCCESSFUL\n\n"
             f"Order ID: {order_id}\n"
             f"Status: Paid\n"
             f"Transaction: {tx_id}\n\n"
-            "Your order is now being processed.\n"
-            "The channel owner will be notified."
+            "Your order is now being processed\n"
+            "The channel owner will be notified"
         )
         
         logger.info(f"Order {order_id} paid successfully")
         
-        # Show success notification with alert
-        await callback.answer("✅ Payment successful! Your order is confirmed.", show_alert=True)
+        # Send CLEAR SUCCESS notification as separate message
+        await callback.message.answer("SUCCESS - Payment completed - Your order is confirmed")
     
     keyboard = [
         [InlineKeyboardButton(text="My Orders", callback_data="my_orders")],
         [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
     ]
     
+    # Send details as new message
     try:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
-    except Exception as e:
-        logger.error(f"Failed to update message: {e}")
-        # If edit fails, send new message
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        # Ultra fallback - just text no buttons
+        await callback.message.answer(text)
+    
+    await callback.answer()
 
 
 # ============================================================================
