@@ -409,7 +409,7 @@ async def get_user_orders(telegram_id: int, db: Session = Depends(get_db)):
     if not user:
         return []
     
-    orders = db.query(Order).filter(Order.buyer_id == user.id).all()
+    orders = db.query(Order).filter(Order.buyer_id == user.id).order_by(Order.created_at.desc()).all()
     
     result = []
     for order in orders:
@@ -420,8 +420,63 @@ async def get_user_orders(telegram_id: int, db: Session = Depends(get_db)):
             "price": order.price,
             "status": order.status,
             "payment_method": order.payment_method,
+            "payment_transaction_id": order.payment_transaction_id,
+            "creative_content": order.creative_content,
+            "creative_media_id": order.creative_media_id,
+            "post_url": order.post_url,
             "created_at": order.created_at.isoformat(),
             "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+            "completed_at": order.completed_at.isoformat() if order.completed_at else None
+        })
+    
+    return result
+
+
+@app.get("/orders/{order_id}")
+async def get_order(order_id: int, db: Session = Depends(get_db)):
+    """Get single order by ID"""
+    order = db.query(Order).filter(Order.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    return {
+        "id": order.id,
+        "buyer_id": order.buyer_id,
+        "channel_id": order.channel_id,
+        "ad_type": order.ad_type,
+        "price": order.price,
+        "status": order.status,
+        "payment_method": order.payment_method,
+        "payment_transaction_id": order.payment_transaction_id,
+        "creative_content": order.creative_content,
+        "creative_media_id": order.creative_media_id,
+        "post_url": order.post_url,
+        "notes": order.notes,
+        "created_at": order.created_at.isoformat(),
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+        "completed_at": order.completed_at.isoformat() if order.completed_at else None
+    }
+
+
+@app.get("/orders/channel/{channel_id}")
+async def get_channel_orders(channel_id: int, db: Session = Depends(get_db)):
+    """Get all orders for a channel"""
+    orders = db.query(Order).filter(Order.channel_id == channel_id).order_by(Order.created_at.desc()).all()
+    
+    result = []
+    for order in orders:
+        result.append({
+            "id": order.id,
+            "buyer_id": order.buyer_id,
+            "ad_type": order.ad_type,
+            "price": order.price,
+            "status": order.status,
+            "payment_transaction_id": order.payment_transaction_id,
+            "creative_content": order.creative_content,
+            "creative_media_id": order.creative_media_id,
+            "post_url": order.post_url,
+            "created_at": order.created_at.isoformat(),
             "completed_at": order.completed_at.isoformat() if order.completed_at else None
         })
     
@@ -451,8 +506,14 @@ async def update_order(
         order.creative_content = update_data["creative_content"]
     if "creative_media_id" in update_data:
         order.creative_media_id = update_data["creative_media_id"]
+    if "post_url" in update_data:
+        order.post_url = update_data["post_url"]
+    if "notes" in update_data:
+        order.notes = update_data["notes"]
     if "paid_at" in update_data:
         order.paid_at = datetime.fromisoformat(update_data["paid_at"])
+    if "completed_at" in update_data:
+        order.completed_at = datetime.fromisoformat(update_data["completed_at"])
     
     db.commit()
     db.refresh(order)
@@ -461,7 +522,10 @@ async def update_order(
         "id": order.id,
         "status": order.status,
         "payment_method": order.payment_method,
-        "payment_transaction_id": order.payment_transaction_id
+        "payment_transaction_id": order.payment_transaction_id,
+        "creative_content": order.creative_content,
+        "creative_media_id": order.creative_media_id,
+        "post_url": order.post_url
     }
 
 
