@@ -1,17 +1,17 @@
 """
-Telegram Bot Handlers - PHASE 2: PURCHASE FLOW
-Complete implementation with browse, purchase, and order management
+Telegram Bot Handlers - PHASE 3: CREATIVE WORKFLOW & AD POSTING
+Complete implementation with creative submission, approval, and automated posting
 """
 
 import logging
-from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ContentType
 import aiohttp
 import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -34,6 +34,11 @@ class PurchaseFlow(StatesGroup):
     confirming_purchase = State()
 
 
+class CreativeSubmission(StatesGroup):
+    waiting_for_content = State()
+    waiting_for_media = State()
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -41,20 +46,20 @@ class PurchaseFlow(StatesGroup):
 async def api_request(method: str, endpoint: str, **kwargs):
     """Make API request to backend"""
     url = f"{API_BASE_URL}{endpoint}"
-    logger.info(f"🔗 API {method} {url}")
+    logger.info(f"API {method} {url}")
     
     try:
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, **kwargs) as response:
-                logger.info(f"📥 Response: {response.status}")
+                logger.info(f"Response: {response.status}")
                 if response.status == 200:
                     return await response.json()
                 else:
                     error_text = await response.text()
-                    logger.error(f"❌ API Error {response.status}: {error_text}")
+                    logger.error(f"API Error {response.status}: {error_text}")
                     return {"error": error_text}
     except Exception as e:
-        logger.error(f"❌ Request failed: {e}")
+        logger.error(f"Request failed: {e}")
         return {"error": str(e)}
 
 
@@ -86,22 +91,23 @@ def create_main_menu_keyboard(is_owner=False, is_advertiser=False):
     
     if not is_owner and not is_advertiser:
         keyboard = [
-            [InlineKeyboardButton(text="📢 I'm a Channel Owner", callback_data="role_channel_owner")],
-            [InlineKeyboardButton(text="🎯 I'm an Advertiser", callback_data="role_advertiser")]
+            [InlineKeyboardButton(text="I am a Channel Owner", callback_data="role_channel_owner")],
+            [InlineKeyboardButton(text="I am an Advertiser", callback_data="role_advertiser")]
         ]
     else:
         if is_owner:
-            keyboard.append([InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")])
-            keyboard.append([InlineKeyboardButton(text="📊 My Channels", callback_data="my_channels")])
+            keyboard.append([InlineKeyboardButton(text="Add My Channel", callback_data="add_channel")])
+            keyboard.append([InlineKeyboardButton(text="My Channels", callback_data="my_channels")])
+            keyboard.append([InlineKeyboardButton(text="Pending Orders", callback_data="pending_orders")])
         
         if is_advertiser:
-            keyboard.append([InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")])
-            keyboard.append([InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")])
+            keyboard.append([InlineKeyboardButton(text="Browse Channels", callback_data="browse_channels")])
+            keyboard.append([InlineKeyboardButton(text="My Orders", callback_data="my_orders")])
         
         if is_owner and not is_advertiser:
-            keyboard.append([InlineKeyboardButton(text="🔄 I also want to Advertise", callback_data="role_advertiser")])
+            keyboard.append([InlineKeyboardButton(text="I also want to Advertise", callback_data="role_advertiser")])
         elif is_advertiser and not is_owner:
-            keyboard.append([InlineKeyboardButton(text="🔄 I also have a Channel", callback_data="role_channel_owner")])
+            keyboard.append([InlineKeyboardButton(text="I also have a Channel", callback_data="role_channel_owner")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -109,10 +115,11 @@ def create_main_menu_keyboard(is_owner=False, is_advertiser=False):
 def create_channel_owner_menu():
     """Create channel owner menu"""
     keyboard = [
-        [InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")],
-        [InlineKeyboardButton(text="📊 My Channels", callback_data="my_channels")],
-        [InlineKeyboardButton(text="🔄 I also want to Advertise", callback_data="role_advertiser")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        [InlineKeyboardButton(text="Add My Channel", callback_data="add_channel")],
+        [InlineKeyboardButton(text="My Channels", callback_data="my_channels")],
+        [InlineKeyboardButton(text="Pending Orders", callback_data="pending_orders")],
+        [InlineKeyboardButton(text="I also want to Advertise", callback_data="role_advertiser")],
+        [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -120,10 +127,10 @@ def create_channel_owner_menu():
 def create_advertiser_menu():
     """Create advertiser menu"""
     keyboard = [
-        [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
-        [InlineKeyboardButton(text="🛒 My Orders", callback_data="my_orders")],
-        [InlineKeyboardButton(text="🔄 I also have a Channel", callback_data="role_channel_owner")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        [InlineKeyboardButton(text="Browse Channels", callback_data="browse_channels")],
+        [InlineKeyboardButton(text="My Orders", callback_data="my_orders")],
+        [InlineKeyboardButton(text="I also have a Channel", callback_data="role_channel_owner")],
+        [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -134,7 +141,7 @@ def create_advertiser_menu():
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    """Handle /start command - WITH DATABASE"""
+    """Handle /start command"""
     logger.info(f"/start from user {message.from_user.id}")
     await state.clear()
     
@@ -157,8 +164,8 @@ async def cmd_start(message: Message, state: FSMContext):
         is_advertiser = result.get("is_advertiser", False)
     
     welcome_text = (
-        f"👋 Welcome to Telegram Ads Marketplace!\n\n"
-        f"Connect channel owners with advertisers.\n\n"
+        f"Welcome to Telegram Ads Marketplace\n\n"
+        f"Connect channel owners with advertisers\n\n"
         f"Your Profile:\n"
         f"Name: {message.from_user.first_name or 'User'}\n"
         f"Username: @{message.from_user.username or 'Not set'}\n\n"
@@ -173,15 +180,17 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cmd_help(message: Message):
     """Handle /help command"""
     help_text = (
-        "🤖 Telegram Ads Marketplace\n\n"
+        "Telegram Ads Marketplace\n\n"
         "For Channel Owners:\n"
-        "• Add channels\n"
-        "• Set pricing\n"
-        "• Earn money\n\n"
+        "- Add channels\n"
+        "- Set pricing\n"
+        "- Approve ads\n"
+        "- Earn money\n\n"
         "For Advertisers:\n"
-        "• Browse channels\n"
-        "• Purchase ads\n"
-        "• Track orders\n\n"
+        "- Browse channels\n"
+        "- Purchase ads\n"
+        "- Submit creatives\n"
+        "- Track orders\n\n"
         "Commands:\n"
         "/start - Main menu\n"
         "/help - This message\n"
@@ -192,25 +201,25 @@ async def cmd_help(message: Message):
 
 @router.message(Command("stats"))
 async def cmd_stats(message: Message):
-    """Handle /stats command - WITH REAL DATABASE DATA"""
+    """Handle /stats command"""
     stats = await api_request("GET", "/stats")
     
     if "error" in stats:
         logger.error(f"Stats fetch failed: {stats['error']}")
         stats_text = (
-            "📊 Statistics\n\n"
-            "👥 Users: 0\n"
-            "📢 Channels: 0\n"
-            "💼 Orders: 0\n"
-            "🔥 Active: 0"
+            "Statistics\n\n"
+            "Users: 0\n"
+            "Channels: 0\n"
+            "Orders: 0\n"
+            "Active: 0"
         )
     else:
         stats_text = (
-            "📊 Marketplace Statistics\n\n"
-            f"👥 Users: {stats.get('total_users', 0)}\n"
-            f"📢 Channels: {stats.get('total_channels', 0)}\n"
-            f"💼 Orders: {stats.get('total_orders', 0)}\n"
-            f"🔥 Active: {stats.get('active_orders', 0)}"
+            "Marketplace Statistics\n\n"
+            f"Users: {stats.get('total_users', 0)}\n"
+            f"Channels: {stats.get('total_channels', 0)}\n"
+            f"Orders: {stats.get('total_orders', 0)}\n"
+            f"Active: {stats.get('active_orders', 0)}"
         )
     
     await message.answer(stats_text)
@@ -222,46 +231,46 @@ async def cmd_stats(message: Message):
 
 @router.callback_query(F.data == "role_channel_owner")
 async def callback_role_channel_owner(callback: CallbackQuery):
-    """Handle channel owner role selection - WITH DATABASE"""
+    """Handle channel owner role selection"""
     logger.info(f"role_channel_owner from {callback.from_user.id}")
     
-    # Update user role in database (JSON body)
+    # Update user role in database
     result = await api_request(
         "PATCH", f"/users/{callback.from_user.id}",
         json={"is_channel_owner": True}
     )
     
     if "error" in result:
-        await callback.answer("Failed to update role. Try again.", show_alert=True)
+        await callback.answer("Failed to update role - Try again", show_alert=True)
     else:
-        await callback.answer("✅ Role updated! You are now a Channel Owner.", show_alert=False)
+        await callback.answer("Role updated - You are now a Channel Owner", show_alert=False)
     
-    text = "Channel Owner Menu\n\nList your channels and earn money!"
+    text = "Channel Owner Menu\n\nList your channels and earn money"
     await callback.message.edit_text(text, reply_markup=create_channel_owner_menu())
 
 
 @router.callback_query(F.data == "role_advertiser")
 async def callback_role_advertiser(callback: CallbackQuery):
-    """Handle advertiser role selection - WITH DATABASE"""
+    """Handle advertiser role selection"""
     logger.info(f"role_advertiser from {callback.from_user.id}")
     
-    # Update user role in database (JSON body)
+    # Update user role in database
     result = await api_request(
         "PATCH", f"/users/{callback.from_user.id}",
         json={"is_advertiser": True}
     )
     
     if "error" in result:
-        await callback.answer("Failed to update role. Try again.", show_alert=True)
+        await callback.answer("Failed to update role - Try again", show_alert=True)
     else:
-        await callback.answer("✅ Role updated! You are now an Advertiser.", show_alert=False)
+        await callback.answer("Role updated - You are now an Advertiser", show_alert=False)
     
-    text = "Advertiser Menu\n\nFind channels for your ads!"
+    text = "Advertiser Menu\n\nFind channels for your ads"
     await callback.message.edit_text(text, reply_markup=create_advertiser_menu())
 
 
 # ============================================================================
-# CHANNEL MANAGEMENT
+# CHANNEL MANAGEMENT (FROM PHASE 1 & 2)
 # ============================================================================
 
 @router.callback_query(F.data == "add_channel")
@@ -278,28 +287,28 @@ async def callback_add_channel(callback: CallbackQuery, state: FSMContext):
             "1. Add the bot as Administrator to your channel\n"
             "2. Enable Post Messages permission\n"
             "3. Forward any message from your channel here\n\n"
-            "Bot will verify admin access before registration."
+            "Bot will verify admin access before registration"
         )
         
         await callback.message.edit_text(text)
         await state.set_state(ChannelRegistration.waiting_for_forward)
-        await callback.answer("Ready! Forward a message from your channel.")
+        await callback.answer("Ready - Forward a message from your channel")
         
         logger.info("add_channel completed successfully")
         
     except Exception as e:
         logger.error(f"Error in add_channel: {e}", exc_info=True)
-        await callback.answer("Error. Try /start", show_alert=True)
+        await callback.answer("Error - Try /start", show_alert=True)
 
 
 @router.message(StateFilter(ChannelRegistration.waiting_for_forward))
 async def process_channel_forward(message: Message, state: FSMContext):
-    """Process forwarded channel message - WITH DATABASE"""
+    """Process forwarded channel message"""
     logger.info(f"Channel forward from {message.from_user.id}")
     
     try:
         if not message.forward_from_chat or message.forward_from_chat.type != "channel":
-            await message.answer("❌ Please forward a message FROM a Telegram channel.")
+            await message.answer("Please forward a message FROM a Telegram channel")
             return
         
         channel_id = message.forward_from_chat.id
@@ -313,11 +322,11 @@ async def process_channel_forward(message: Message, state: FSMContext):
         
         if not admin_check["is_admin"]:
             text = (
-                f"❌ Bot Not Admin\n\n"
-                f"I'm not admin in {channel_title}!\n\n"
+                f"Bot Not Admin\n\n"
+                f"I am not admin in {channel_title}\n\n"
                 f"Fix:\n"
                 f"1. Open {channel_title}\n"
-                f"2. Settings → Administrators\n"
+                f"2. Settings > Administrators\n"
                 f"3. Add the bot\n"
                 f"4. Enable Post Messages\n"
                 f"5. Try again"
@@ -329,17 +338,17 @@ async def process_channel_forward(message: Message, state: FSMContext):
         
         if not admin_check["can_post"]:
             text = (
-                f"⚠️ No Post Permission\n\n"
-                f"I'm admin but can't post in {channel_title}!\n\n"
+                f"No Post Permission\n\n"
+                f"I am admin but cannot post in {channel_title}\n\n"
                 f"Fix:\n"
-                f"1. {channel_title} → Administrators\n"
+                f"1. {channel_title} > Administrators\n"
                 f"2. Tap the bot\n"
                 f"3. Enable Post Messages\n"
                 f"4. Try again"
             )
             await message.answer(text)
             await state.clear()
-            logger.info(f"Rejected: Can't post in {channel_id}")
+            logger.info(f"Rejected: Cannot post in {channel_id}")
             return
         
         # SUCCESS - Save to state for pricing
@@ -350,12 +359,12 @@ async def process_channel_forward(message: Message, state: FSMContext):
         )
         
         text = (
-            f"✅ Channel Verified!\n\n"
-            f"📢 {channel_title}\n"
-            f"🔗 {channel_username or 'Private'}\n\n"
-            f"✅ Admin confirmed\n"
-            f"✅ Can post messages\n\n"
-            f"💰 Set Pricing:\n\n"
+            f"Channel Verified\n\n"
+            f"Channel: {channel_title}\n"
+            f"Link: {channel_username or 'Private'}\n\n"
+            f"Admin confirmed\n"
+            f"Can post messages\n\n"
+            f"Set Pricing:\n\n"
             f"Send in this format:\n"
             f"post: 100\n"
             f"story: 50\n"
@@ -369,7 +378,7 @@ async def process_channel_forward(message: Message, state: FSMContext):
         
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
-        await message.answer("❌ Error. Try again.")
+        await message.answer("Error - Try again")
         await state.clear()
 
 
@@ -379,7 +388,7 @@ async def process_channel_pricing(message: Message, state: FSMContext):
     try:
         data = await state.get_data()
         if not data:
-            await message.answer("❌ No channel data. Start with /start")
+            await message.answer("No channel data - Start with /start")
             await state.clear()
             return
         
@@ -399,7 +408,7 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
         if not pricing:
             text = (
-                "❌ Invalid format.\n\n"
+                "Invalid format\n\n"
                 "Send like:\n"
                 "post: 100\n"
                 "story: 50\n"
@@ -422,24 +431,22 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
         if "error" in result:
             if "already exists" in str(result.get("error", "")).lower():
-                await message.answer(f"{data['channel_title']} already listed in database!")
+                await message.answer(f"{data['channel_title']} already listed in database")
             else:
-                await message.answer(f"Database error: {result.get('error')}\n\nPlease try again.")
+                await message.answer(f"Database error: {result.get('error')}\n\nPlease try again")
         else:
-            pricing_str = "\n".join([f"• {k}: {v} USD" for k, v in pricing.items()])
+            pricing_str = "\n".join([f"- {k}: {v} USD" for k, v in pricing.items()])
             
             text = (
-                f"Channel Saved to Database!\n\n"
+                f"Channel Saved to Database\n\n"
                 f"Channel: {data['channel_title']}\n"
                 f"Pricing:\n{pricing_str}\n\n"
-                f"Stored permanently!\n"
+                f"Stored permanently\n"
                 f"Database ID: {result.get('id')}"
             )
             
             await message.answer(text)
-            
-            # Show success notification
-            await message.answer("✅ SUCCESS! Your channel is now live in the marketplace!")
+            await message.answer("SUCCESS - Your channel is now live in the marketplace")
         
         await state.clear()
         
@@ -447,22 +454,22 @@ async def process_channel_pricing(message: Message, state: FSMContext):
         
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
-        await message.answer("❌ Error saving to database. Try again.")
+        await message.answer("Error saving to database - Try again")
         await state.clear()
 
 
 @router.callback_query(F.data == "my_channels")
 async def callback_my_channels(callback: CallbackQuery):
-    """Show user's channels - FROM DATABASE"""
+    """Show user's channels"""
     logger.info(f"my_channels from {callback.from_user.id}")
     
     # Fetch user's channels from database
     channels = await api_request("GET", f"/channels/owner/{callback.from_user.id}")
     
     if "error" in channels or not channels:
-        text = "📊 My Channels\n\nYou haven't added any channels yet.\n\nUse 'Add My Channel' to get started!"
+        text = "My Channels\n\nYou have not added any channels yet\n\nUse Add My Channel to get started"
     else:
-        text = f"📊 My Channels ({len(channels)} total)\n\n"
+        text = f"My Channels ({len(channels)} total)\n\n"
         for channel in channels[:10]:
             pricing = channel.get("pricing", {})
             pricing_text = ", ".join([f"{k}: {v} USD" for k, v in pricing.items()])
@@ -475,12 +482,12 @@ async def callback_my_channels(callback: CallbackQuery):
 
 
 # ============================================================================
-# BROWSE CHANNELS - PHASE 2 ENHANCED
+# BROWSE CHANNELS (FROM PHASE 2)
 # ============================================================================
 
 @router.callback_query(F.data == "browse_channels")
 async def callback_browse_channels(callback: CallbackQuery, state: FSMContext):
-    """Browse channels - ENHANCED WITH PURCHASE BUTTONS"""
+    """Browse channels"""
     logger.info(f"browse_channels from {callback.from_user.id}")
     
     await state.clear()
@@ -489,7 +496,7 @@ async def callback_browse_channels(callback: CallbackQuery, state: FSMContext):
     channels = await api_request("GET", "/channels/")
     
     if "error" in channels or not isinstance(channels, list) or len(channels) == 0:
-        text = "🔍 Browse Channels\n\nNo channels available yet.\n\nCheck back soon!"
+        text = "Browse Channels\n\nNo channels available yet\n\nCheck back soon"
         await callback.message.edit_text(text)
         await callback.answer()
         return
@@ -506,7 +513,7 @@ async def show_channel_detail(message, channel: dict, index: int, total: int, us
     # Build pricing display
     pricing_lines = []
     for ad_type, price in pricing.items():
-        pricing_lines.append(f"  • {ad_type.capitalize()}: {price} USD")
+        pricing_lines.append(f"  - {ad_type.capitalize()}: {price} USD")
     
     pricing_text = "\n".join(pricing_lines) if pricing_lines else "  No pricing set"
     
@@ -525,22 +532,22 @@ async def show_channel_detail(message, channel: dict, index: int, total: int, us
     
     # Purchase button
     keyboard.append([InlineKeyboardButton(
-        text="🛒 Purchase Ad",
+        text="Purchase Ad",
         callback_data=f"purchase_channel_{channel['id']}"
     )])
     
     # Navigation buttons
     nav_row = []
     if index > 0:
-        nav_row.append(InlineKeyboardButton(text="⬅️ Previous", callback_data=f"channel_nav_{index-1}"))
+        nav_row.append(InlineKeyboardButton(text="Previous", callback_data=f"channel_nav_{index-1}"))
     if index < total - 1:
-        nav_row.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"channel_nav_{index+1}"))
+        nav_row.append(InlineKeyboardButton(text="Next", callback_data=f"channel_nav_{index+1}"))
     
     if nav_row:
         keyboard.append(nav_row)
     
     # Back button
-    keyboard.append([InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton(text="Main Menu", callback_data="main_menu")])
     
     await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
 
@@ -560,7 +567,7 @@ async def callback_channel_navigation(callback: CallbackQuery):
 
 
 # ============================================================================
-# PURCHASE FLOW - PHASE 2
+# PURCHASE FLOW (FROM PHASE 2)
 # ============================================================================
 
 @router.callback_query(F.data.startswith("purchase_channel_"))
@@ -574,7 +581,7 @@ async def callback_purchase_channel(callback: CallbackQuery, state: FSMContext):
     channel = await api_request("GET", f"/channels/{channel_id}")
     
     if "error" in channel:
-        await callback.answer("❌ Channel not found!", show_alert=True)
+        await callback.answer("Channel not found", show_alert=True)
         return
     
     # Save channel to state
@@ -588,8 +595,8 @@ async def callback_purchase_channel(callback: CallbackQuery, state: FSMContext):
     pricing = channel['pricing']
     
     text = (
-        f"🛒 Purchase Ad Slot\n\n"
-        f"📢 {channel['channel_title']}\n\n"
+        f"Purchase Ad Slot\n\n"
+        f"Channel: {channel['channel_title']}\n\n"
         f"Select ad type:"
     )
     
@@ -661,7 +668,6 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
         text = f"ORDER CREATION FAILED\n\n{error_msg}\n\nPlease try again"
         keyboard = [[InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]]
         
-        # Send CLEAR failure notification
         await callback.message.answer("FAILED - Could not create order - Please try again")
     else:
         order_id = result.get('id')
@@ -683,8 +689,6 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
         ]
         
         logger.info(f"Order created: {order_id}")
-        
-        # Send CLEAR success notification
         await callback.message.answer("SUCCESS - Order created - Proceed to payment")
     
     try:
@@ -698,7 +702,7 @@ async def callback_confirm_purchase(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================================
-# PAYMENT SIMULATION - PHASE 2
+# PAYMENT SIMULATION (FROM PHASE 2)
 # ============================================================================
 
 @router.callback_query(F.data.startswith("pay_order_"))
@@ -727,11 +731,10 @@ async def callback_pay_order(callback: CallbackQuery):
             "PAYMENT FAILED\n\n"
             f"Order ID: {order_id}\n"
             f"Error: {error_msg}\n\n"
-            "Please try again or contact support."
+            "Please try again or contact support"
         )
         logger.error(f"Payment failed for order {order_id}: {error_msg}")
         
-        # Send CLEAR notification as separate message
         await callback.message.answer("PAYMENT FAILED - Please try again")
         
     else:
@@ -743,13 +746,13 @@ async def callback_pay_order(callback: CallbackQuery):
             f"Status: Paid\n"
             f"Transaction: {tx_id}\n\n"
             "Your order is now being processed\n"
-            "The channel owner will be notified"
+            "Next step: Submit your ad creative\n\n"
+            "Go to My Orders to submit creative"
         )
         
         logger.info(f"Order {order_id} paid successfully")
         
-        # Send CLEAR SUCCESS notification as separate message
-        await callback.message.answer("SUCCESS - Payment completed - Your order is confirmed")
+        await callback.message.answer("SUCCESS - Payment completed - Your order is confirmed - Submit creative next")
     
     keyboard = [
         [InlineKeyboardButton(text="My Orders", callback_data="my_orders")],
@@ -761,19 +764,18 @@ async def callback_pay_order(callback: CallbackQuery):
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
-        # Ultra fallback - just text no buttons
         await callback.message.answer(text)
     
     await callback.answer()
 
 
 # ============================================================================
-# ORDER MANAGEMENT - PHASE 2 ENHANCED
+# MY ORDERS - PHASE 3 ENHANCED WITH CREATIVE SUBMISSION
 # ============================================================================
 
 @router.callback_query(F.data == "my_orders")
 async def callback_my_orders(callback: CallbackQuery):
-    """Show user's orders - ENHANCED FROM DATABASE"""
+    """Show user's orders with action buttons"""
     logger.info(f"my_orders from {callback.from_user.id}")
     
     # Fetch orders from database
@@ -781,46 +783,426 @@ async def callback_my_orders(callback: CallbackQuery):
     
     if "error" in orders or not orders:
         text = (
-            "🛒 My Orders\n\n"
-            "You haven't placed any orders yet.\n\n"
-            "Browse channels to get started!"
+            "My Orders\n\n"
+            "You have not placed any orders yet\n\n"
+            "Browse channels to get started"
         )
         keyboard = [
-            [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+            [InlineKeyboardButton(text="Browse Channels", callback_data="browse_channels")],
+            [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
         ]
     else:
-        text = f"🛒 My Orders ({len(orders)} total)\n\n"
+        text = f"My Orders ({len(orders)} total)\n\n"
         
-        for order in orders[:10]:
+        keyboard = []
+        
+        for order in orders[:5]:  # Show only 5 most recent
             status_emoji = {
-                "pending_payment": "⏳",
-                "paid": "✅",
-                "processing": "🔄",
-                "completed": "✅",
-                "cancelled": "❌",
-                "refunded": "💰"
-            }.get(order["status"], "❓")
+                "pending_payment": "Pending Payment",
+                "paid": "Paid - Submit Creative",
+                "creative_submitted": "Creative Submitted",
+                "creative_approved": "Approved - Posting Soon",
+                "posted": "Posted",
+                "completed": "Completed",
+                "cancelled": "Cancelled",
+                "refunded": "Refunded"
+            }.get(order["status"], "Unknown")
             
-            text += f"{status_emoji} Order {order['id']}\n"
-            text += f"   Type: {order['ad_type'].capitalize()}\n"
-            text += f"   Price: {order['price']} USD\n"
-            text += f"   Status: {order['status'].replace('_', ' ').title()}\n"
+            text += f"Order {order['id']} - {order['ad_type'].capitalize()}\n"
+            text += f"Status: {status_emoji}\n"
+            text += f"Price: {order['price']} USD\n\n"
             
-            if order.get('payment_transaction_id'):
-                text += f"   TX: {order['payment_transaction_id']}\n"
-            
-            text += "\n"
+            # Add action button based on status
+            if order["status"] == "paid":
+                keyboard.append([InlineKeyboardButton(
+                    text=f"Submit Creative for Order {order['id']}",
+                    callback_data=f"submit_creative_{order['id']}"
+                )])
+            elif order["status"] in ["creative_submitted", "creative_approved", "posted"]:
+                keyboard.append([InlineKeyboardButton(
+                    text=f"View Order {order['id']} Details",
+                    callback_data=f"view_order_{order['id']}"
+                )])
         
-        if len(orders) > 10:
-            text += f"...and {len(orders) - 10} more orders"
+        if len(orders) > 5:
+            text += f"...and {len(orders) - 5} more orders"
         
-        keyboard = [
-            [InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
-        ]
+        keyboard.append([InlineKeyboardButton(text="Browse Channels", callback_data="browse_channels")])
+        keyboard.append([InlineKeyboardButton(text="Main Menu", callback_data="main_menu")])
     
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    try:
+        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except Exception as e:
+        logger.error(f"Failed to edit message: {e}")
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    
+    await callback.answer()
+
+
+# ============================================================================
+# CREATIVE SUBMISSION - PHASE 3 NEW
+# ============================================================================
+
+@router.callback_query(F.data.startswith("submit_creative_"))
+async def callback_submit_creative(callback: CallbackQuery, state: FSMContext):
+    """Start creative submission process"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Creative submission started for order {order_id}")
+    
+    # Save order ID to state
+    await state.update_data(order_id=order_id)
+    
+    text = (
+        f"Submit Creative for Order {order_id}\n\n"
+        f"Step 1: Send your ad text\n\n"
+        f"Type the text you want in your ad\n"
+        f"You can include emojis and formatting\n\n"
+        f"Send /cancel to abort"
+    )
+    
+    await callback.message.answer(text)
+    await state.set_state(CreativeSubmission.waiting_for_content)
+    await callback.answer("Send your ad text now")
+
+
+@router.message(StateFilter(CreativeSubmission.waiting_for_content))
+async def process_creative_content(message: Message, state: FSMContext):
+    """Process ad text content"""
+    if message.text and message.text.startswith("/cancel"):
+        await message.answer("Creative submission cancelled")
+        await state.clear()
+        return
+    
+    if not message.text:
+        await message.answer("Please send text for your ad")
+        return
+    
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    
+    # Save content to state
+    await state.update_data(creative_content=message.text)
+    
+    logger.info(f"Creative content received for order {order_id}")
+    
+    text = (
+        f"Ad Text Received\n\n"
+        f"Step 2: Send an image or video (optional)\n\n"
+        f"Send a photo or video for your ad\n"
+        f"Or send /skip to submit without media\n"
+        f"Send /cancel to abort"
+    )
+    
+    await message.answer(text)
+    await state.set_state(CreativeSubmission.waiting_for_media)
+
+
+@router.message(StateFilter(CreativeSubmission.waiting_for_media))
+async def process_creative_media(message: Message, state: FSMContext):
+    """Process ad media (photo or video)"""
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    creative_content = data.get('creative_content')
+    
+    if message.text:
+        if message.text.startswith("/cancel"):
+            await message.answer("Creative submission cancelled")
+            await state.clear()
+            return
+        elif message.text.startswith("/skip"):
+            # Submit without media
+            creative_media_id = None
+        else:
+            await message.answer("Please send a photo or video, or /skip")
+            return
+    elif message.photo:
+        # Get the largest photo
+        creative_media_id = message.photo[-1].file_id
+        logger.info(f"Photo received for order {order_id}: {creative_media_id}")
+    elif message.video:
+        creative_media_id = message.video.file_id
+        logger.info(f"Video received for order {order_id}: {creative_media_id}")
+    else:
+        await message.answer("Please send a photo or video, or /skip")
+        return
+    
+    # Update order with creative
+    result = await api_request(
+        "PATCH", f"/orders/{order_id}",
+        json={
+            "creative_content": creative_content,
+            "creative_media_id": creative_media_id,
+            "status": "creative_submitted"
+        }
+    )
+    
+    if "error" in result:
+        await message.answer(f"Failed to submit creative: {result.get('error')}")
+    else:
+        text = (
+            f"CREATIVE SUBMITTED SUCCESSFULLY\n\n"
+            f"Order ID: {order_id}\n"
+            f"Status: Waiting for approval\n\n"
+            f"The channel owner will review your creative\n"
+            f"You will be notified when it is approved"
+        )
+        await message.answer(text)
+        await message.answer("SUCCESS - Creative submitted - Channel owner will review it")
+        
+        logger.info(f"Creative submitted for order {order_id}")
+    
+    await state.clear()
+
+
+# ============================================================================
+# PENDING ORDERS (CHANNEL OWNER) - PHASE 3 NEW
+# ============================================================================
+
+@router.callback_query(F.data == "pending_orders")
+async def callback_pending_orders(callback: CallbackQuery):
+    """Show pending orders for channel owner to approve"""
+    logger.info(f"pending_orders from {callback.from_user.id}")
+    
+    # Get user's channels
+    channels = await api_request("GET", f"/channels/owner/{callback.from_user.id}")
+    
+    if "error" in channels or not channels:
+        await callback.message.answer("You have no channels - Add a channel first")
+        await callback.answer()
+        return
+    
+    # Get channel IDs
+    channel_ids = [ch['id'] for ch in channels]
+    
+    # Get all orders for these channels with creative_submitted status
+    all_orders = []
+    for channel_id in channel_ids:
+        orders = await api_request("GET", f"/orders/channel/{channel_id}")
+        if "error" not in orders and orders:
+            # Filter for creative_submitted status
+            pending = [o for o in orders if o.get('status') == 'creative_submitted']
+            all_orders.extend(pending)
+    
+    if not all_orders:
+        text = "Pending Orders\n\nNo pending orders to review"
+        keyboard = [[InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]]
+    else:
+        text = f"Pending Orders ({len(all_orders)} total)\n\nOrders waiting for your approval:\n\n"
+        
+        keyboard = []
+        
+        for order in all_orders[:5]:
+            text += f"Order {order['id']} - {order['ad_type'].capitalize()}\n"
+            text += f"Price: {order['price']} USD\n"
+            text += f"Status: Creative Submitted\n\n"
+            
+            keyboard.append([InlineKeyboardButton(
+                text=f"Review Order {order['id']}",
+                callback_data=f"review_order_{order['id']}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(text="Main Menu", callback_data="main_menu")])
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except:
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("review_order_"))
+async def callback_review_order(callback: CallbackQuery):
+    """Review and approve/reject order creative"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Reviewing order {order_id}")
+    
+    # Get order details
+    result = await api_request("GET", f"/orders/{order_id}")
+    
+    if "error" in result:
+        await callback.answer("Order not found", show_alert=True)
+        return
+    
+    order = result
+    
+    text = (
+        f"Review Order {order_id}\n\n"
+        f"Ad Type: {order['ad_type'].capitalize()}\n"
+        f"Price: {order['price']} USD\n\n"
+        f"Ad Text:\n{order.get('creative_content', 'No text')}\n\n"
+        f"Media: {'Yes' if order.get('creative_media_id') else 'No'}\n\n"
+        f"Approve or reject this creative?"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton(text="Approve and Post", callback_data=f"approve_order_{order_id}")],
+        [InlineKeyboardButton(text="Reject", callback_data=f"reject_order_{order_id}")],
+        [InlineKeyboardButton(text="Back", callback_data="pending_orders")]
+    ]
+    
+    # If there's media, send it first
+    if order.get('creative_media_id'):
+        try:
+            await callback.message.answer_photo(
+                photo=order['creative_media_id'],
+                caption="Attached media for review"
+            )
+        except:
+            pass
+    
+    try:
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    except:
+        pass
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("approve_order_"))
+async def callback_approve_order(callback: CallbackQuery):
+    """Approve order and post ad to channel"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Approving order {order_id}")
+    
+    # Get order details
+    order_result = await api_request("GET", f"/orders/{order_id}")
+    
+    if "error" in order_result:
+        await callback.answer("Order not found", show_alert=True)
+        return
+    
+    order = order_result
+    channel_id = order['channel_id']
+    
+    # Get channel details
+    channel_result = await api_request("GET", f"/channels/{channel_id}")
+    
+    if "error" in channel_result:
+        await callback.answer("Channel not found", show_alert=True)
+        return
+    
+    channel = channel_result
+    telegram_channel_id = channel['telegram_channel_id']
+    
+    # Post ad to channel
+    try:
+        bot = callback.bot
+        creative_content = order.get('creative_content', 'Advertisement')
+        creative_media_id = order.get('creative_media_id')
+        
+        if creative_media_id:
+            # Post with media
+            sent_message = await bot.send_photo(
+                chat_id=telegram_channel_id,
+                photo=creative_media_id,
+                caption=creative_content
+            )
+        else:
+            # Post text only
+            sent_message = await bot.send_message(
+                chat_id=telegram_channel_id,
+                text=creative_content
+            )
+        
+        # Get post URL
+        if channel.get('channel_username'):
+            post_url = f"https://t.me/{channel['channel_username']}/{sent_message.message_id}"
+        else:
+            post_url = f"Posted to channel {channel['channel_title']}"
+        
+        logger.info(f"Ad posted for order {order_id}: {post_url}")
+        
+        # Update order status
+        await api_request(
+            "PATCH", f"/orders/{order_id}",
+            json={
+                "status": "posted",
+                "post_url": post_url,
+                "completed_at": datetime.utcnow().isoformat()
+            }
+        )
+        
+        await callback.message.answer(f"SUCCESS - Ad posted to channel successfully")
+        await callback.message.answer(f"Order {order_id} completed\nPost URL: {post_url}")
+        
+    except Exception as e:
+        logger.error(f"Failed to post ad: {e}")
+        await callback.message.answer(f"FAILED - Could not post ad: {str(e)}")
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("reject_order_"))
+async def callback_reject_order(callback: CallbackQuery):
+    """Reject order creative"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Rejecting order {order_id}")
+    
+    # Update order status back to paid so user can resubmit
+    result = await api_request(
+        "PATCH", f"/orders/{order_id}",
+        json={"status": "paid"}
+    )
+    
+    if "error" in result:
+        await callback.answer("Failed to reject order", show_alert=True)
+    else:
+        await callback.message.answer(f"Order {order_id} rejected - Advertiser can resubmit creative")
+        await callback.answer("Order rejected")
+    
+
+
+# ============================================================================
+# VIEW ORDER DETAILS
+# ============================================================================
+
+@router.callback_query(F.data.startswith("view_order_"))
+async def callback_view_order(callback: CallbackQuery):
+    """View order details"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    result = await api_request("GET", f"/orders/{order_id}")
+    
+    if "error" in result:
+        await callback.answer("Order not found", show_alert=True)
+        return
+    
+    order = result
+    
+    status_text = {
+        "pending_payment": "Pending Payment",
+        "paid": "Paid - Awaiting Creative",
+        "creative_submitted": "Creative Submitted - Under Review",
+        "posted": "Posted to Channel",
+        "completed": "Completed",
+        "cancelled": "Cancelled"
+    }.get(order['status'], order['status'])
+    
+    text = (
+        f"Order Details\n\n"
+        f"Order ID: {order['id']}\n"
+        f"Ad Type: {order['ad_type'].capitalize()}\n"
+        f"Price: {order['price']} USD\n"
+        f"Status: {status_text}\n\n"
+    )
+    
+    if order.get('creative_content'):
+        text += f"Ad Text:\n{order['creative_content']}\n\n"
+    
+    if order.get('post_url'):
+        text += f"Post URL: {order['post_url']}\n\n"
+    
+    if order.get('payment_transaction_id'):
+        text += f"Transaction: {order['payment_transaction_id']}\n"
+    
+    keyboard = [[InlineKeyboardButton(text="My Orders", callback_data="my_orders")]]
+    
+    await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     await callback.answer()
 
 
@@ -830,7 +1212,7 @@ async def callback_my_orders(callback: CallbackQuery):
 
 @router.callback_query(F.data == "main_menu")
 async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
-    """Return to main menu - WITH DATABASE"""
+    """Return to main menu"""
     logger.info(f"main_menu from {callback.from_user.id}")
     await state.clear()
     
@@ -846,13 +1228,18 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
     
     keyboard = create_main_menu_keyboard(is_owner, is_advertiser)
     
-    text = "🏠 Main Menu\n\nWhat would you like to do?"
-    await callback.message.edit_text(text, reply_markup=keyboard)
+    text = "Main Menu\n\nWhat would you like to do?"
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except:
+        await callback.message.answer(text, reply_markup=keyboard)
+    
     await callback.answer()
 
 
 def setup_handlers(dp):
     """Register handlers"""
     dp.include_router(router)
-    logger.info("✅ Router registered with dispatcher")
-    logger.info("📝 Registered handlers with PHASE 2: PURCHASE FLOW")
+    logger.info("Router registered with dispatcher")
+    logger.info("Registered handlers with PHASE 3: CREATIVE WORKFLOW AND AD POSTING")
