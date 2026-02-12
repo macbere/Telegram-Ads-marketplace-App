@@ -5,11 +5,13 @@ Complete API endpoints for user and channel management
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, List
+from pathlib import Path
 import logging
 import asyncio
 import os
@@ -75,6 +77,19 @@ async def root():
         "version": "1.0.0",
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+@app.get("/webapp", response_class=HTMLResponse)
+async def serve_webapp():
+    """Serve the beautiful Web App UI"""
+    try:
+        html_path = Path(__file__).parent / "index.html"
+        if html_path.exists():
+            return FileResponse(html_path)
+        return HTMLResponse("<h1>Web App UI - Coming Soon</h1>")
+    except Exception as e:
+        logger.error(f"Error serving webapp: {e}")
+        return HTMLResponse("<h1>Error loading Web App</h1>")
 
 
 @app.get("/health")
