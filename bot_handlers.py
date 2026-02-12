@@ -1,6 +1,6 @@
 """
-Telegram Bot Handlers - PHASE 3: CREATIVE WORKFLOW & AD POSTING
-Complete implementation with creative submission, approval, and automated posting
+Telegram Bot Handlers - PHASE 4: FINAL PRODUCTION POLISH
+Complete implementation with notifications, earnings dashboard, and order management
 """
 
 import logging
@@ -63,6 +63,46 @@ async def api_request(method: str, endpoint: str, **kwargs):
         return {"error": str(e)}
 
 
+async def send_notification(bot, telegram_id: int, message: str):
+    """Send notification to user"""
+    try:
+        await bot.send_message(chat_id=telegram_id, text=message)
+        logger.info(f"Notification sent to {telegram_id}")
+    except Exception as e:
+        logger.error(f"Failed to send notification to {telegram_id}: {e}")
+
+
+async def notify_order_status_change(bot, order_id: int, old_status: str, new_status: str):
+    """Notify relevant parties when order status changes"""
+    # Get order details
+    order = await api_request("GET", f"/orders/{order_id}")
+    if "error" in order:
+        return
+    
+    buyer_telegram_id = order.get('buyer_telegram_id')
+    
+    # Notification messages based on status
+    if new_status == "paid":
+        message = f"Order {order_id} payment confirmed - Submit your creative now"
+        await send_notification(bot, buyer_telegram_id, message)
+    
+    elif new_status == "creative_submitted":
+        message = f"Order {order_id} creative submitted - Waiting for channel owner approval"
+        await send_notification(bot, buyer_telegram_id, message)
+        
+        # Notify channel owner
+        channel = await api_request("GET", f"/channels/{order['channel_id']}")
+        if "error" not in channel:
+            owner = await api_request("GET", f"/users/telegram/{channel['owner_telegram_id']}")
+            if "error" not in owner:
+                owner_message = f"New order {order_id} waiting for review - Check Pending Orders"
+                await send_notification(bot, channel['owner_telegram_id'], owner_message)
+    
+    elif new_status == "posted":
+        message = f"Order {order_id} approved and posted to channel - Check My Orders for details"
+        await send_notification(bot, buyer_telegram_id, message)
+
+
 async def check_bot_admin_status(message: Message, channel_id: int) -> dict:
     """Check if bot is admin in the channel"""
     try:
@@ -117,6 +157,7 @@ def create_channel_owner_menu():
     keyboard = [
         [InlineKeyboardButton(text="Add My Channel", callback_data="add_channel")],
         [InlineKeyboardButton(text="My Channels", callback_data="my_channels")],
+        [InlineKeyboardButton(text="My Earnings", callback_data="my_earnings")],
         [InlineKeyboardButton(text="Pending Orders", callback_data="pending_orders")],
         [InlineKeyboardButton(text="I also want to Advertise", callback_data="role_advertiser")],
         [InlineKeyboardButton(text="Main Menu", callback_data="main_menu")]
@@ -481,6 +522,76 @@ async def callback_my_channels(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "my_earnings")
+async def callback_my_earnings(callback: CallbackQuery):
+    """Show channel owner earnings dashboard"""
+    logger.info(f"my_earnings from {callback.from_user.id}")
+    
+    # Fetch user's channels
+    channels = await api_request("GET", f"/channels/owner/{callback.from_user.id}")
+    
+    if "error" in channels or not channels:
+        text = "Earnings Dashboard\n\nYou have no channels yet\n\nAdd a channel to start earning"
+        await callback.message.edit_text(text)
+        await callback.answer()
+        return
+    
+    # Calculate total earnings
+    total_earnings = 0.0
+    total_orders = 0
+    completed_orders = 0
+    pending_orders = 0
+    
+    channel_earnings = []
+    
+    for channel in channels:
+        # Get orders for this channel
+        orders = await api_request("GET", f"/orders/channel/{channel['id']}")
+        
+        if "error" not in orders and orders:
+            channel_total = 0.0
+            channel_completed = 0
+            channel_pending = 0
+            
+            for order in orders:
+                total_orders += 1
+                if order['status'] in ['posted', 'completed']:
+                    channel_total += order['price']
+                    channel_completed += 1
+                    completed_orders += 1
+                elif order['status'] in ['paid', 'creative_submitted']:
+                    channel_pending += 1
+                    pending_orders += 1
+            
+            total_earnings += channel_total
+            
+            if channel_completed > 0 or channel_pending > 0:
+                channel_earnings.append({
+                    'name': channel['channel_title'],
+                    'earned': channel_total,
+                    'completed': channel_completed,
+                    'pending': channel_pending
+                })
+    
+    # Build earnings report
+    text = "Earnings Dashboard\n\n"
+    text += f"Total Earnings {total_earnings} USD\n"
+    text += f"Total Orders {total_orders}\n"
+    text += f"Completed {completed_orders}\n"
+    text += f"Pending {pending_orders}\n\n"
+    
+    if channel_earnings:
+        text += "Per Channel\n\n"
+        for ch in channel_earnings:
+            text += f"{ch['name']}\n"
+            text += f"  Earned {ch['earned']} USD\n"
+            text += f"  Completed {ch['completed']} orders\n"
+            text += f"  Pending {ch['pending']} orders\n\n"
+    
+    await callback.message.edit_text(text)
+    await callback.answer()
+
+
 # ============================================================================
 # BROWSE CHANNELS (FROM PHASE 2)
 # ============================================================================
@@ -817,7 +928,12 @@ async def callback_my_orders(callback: CallbackQuery):
             text += f"Price {order['price']} USD\n\n"
             
             # Add action button based on status
-            if order["status"] == "paid":
+            if order["status"] == "pending_payment":
+                keyboard.append([InlineKeyboardButton(
+                    text=f"Cancel Order {order['id']}",
+                    callback_data=f"cancel_order_{order['id']}"
+                )])
+            elif order["status"] == "paid":
                 keyboard.append([InlineKeyboardButton(
                     text=f"Submit Creative for Order {order['id']}",
                     callback_data=f"submit_creative_{order['id']}"
@@ -1219,6 +1335,32 @@ async def callback_view_order(callback: CallbackQuery):
 
 
 # ============================================================================
+# ORDER CANCELLATION - PHASE 4 NEW
+# ============================================================================
+
+@router.callback_query(F.data.startswith("cancel_order_"))
+async def callback_cancel_order(callback: CallbackQuery):
+    """Cancel an unpaid order"""
+    order_id = int(callback.data.split("_")[-1])
+    
+    logger.info(f"Cancelling order {order_id}")
+    
+    # Update order status
+    result = await api_request(
+        "PATCH", f"/orders/{order_id}",
+        json={"status": "cancelled"}
+    )
+    
+    if "error" in result:
+        await callback.answer("Failed to cancel order", show_alert=True)
+    else:
+        await callback.message.answer(f"Order {order_id} cancelled successfully")
+        await callback.answer("Order cancelled")
+        
+        logger.info(f"Order {order_id} cancelled")
+
+
+# ============================================================================
 # MAIN MENU
 # ============================================================================
 
@@ -1254,4 +1396,4 @@ def setup_handlers(dp):
     """Register handlers"""
     dp.include_router(router)
     logger.info("Router registered with dispatcher")
-    logger.info("Registered handlers with PHASE 3: CREATIVE WORKFLOW AND AD POSTING")
+    logger.info("Registered handlers with PHASE 4: FINAL PRODUCTION POLISH")
