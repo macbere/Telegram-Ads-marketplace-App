@@ -1,6 +1,6 @@
 """
-Telegram Bot Handlers - PHASE 5: PREMIUM UI DESIGN
-World-class user interface with professional styling
+Telegram Bot Handlers - PHASE 4: FINAL PRODUCTION POLISH
+Complete implementation with notifications, earnings dashboard, and order management
 """
 
 import logging
@@ -8,17 +8,17 @@ from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ContentType
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ContentType, WebAppInfo
 import aiohttp
 import os
 from datetime import datetime
-from ui_design import *
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 # API base URL
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:10000")
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://telegram-ads-marketplace-app.onrender.com/webapp")
 
 
 # ============================================================================
@@ -130,25 +130,30 @@ def create_main_menu_keyboard(is_owner=False, is_advertiser=False):
     """Create main menu keyboard based on user roles"""
     keyboard = []
     
+    # Add Web App button at the top
+    keyboard.append([InlineKeyboardButton(
+        text="🌐 Open Marketplace",
+        web_app=WebAppInfo(url=WEB_APP_URL)
+    )])
+    
     if not is_owner and not is_advertiser:
-        keyboard = [
-            [InlineKeyboardButton(text="I am a Channel Owner", callback_data="role_channel_owner")],
-            [InlineKeyboardButton(text="I am an Advertiser", callback_data="role_advertiser")]
-        ]
+        keyboard.append([InlineKeyboardButton(text="💼 I am a Channel Owner", callback_data="role_channel_owner")])
+        keyboard.append([InlineKeyboardButton(text="📢 I am an Advertiser", callback_data="role_advertiser")])
     else:
         if is_owner:
-            keyboard.append([InlineKeyboardButton(text="Add My Channel", callback_data="add_channel")])
-            keyboard.append([InlineKeyboardButton(text="My Channels", callback_data="my_channels")])
-            keyboard.append([InlineKeyboardButton(text="Pending Orders", callback_data="pending_orders")])
+            keyboard.append([InlineKeyboardButton(text="➕ Add My Channel", callback_data="add_channel")])
+            keyboard.append([InlineKeyboardButton(text="📊 My Channels", callback_data="my_channels")])
+            keyboard.append([InlineKeyboardButton(text="💰 My Earnings", callback_data="my_earnings")])
+            keyboard.append([InlineKeyboardButton(text="⏳ Pending Orders", callback_data="pending_orders")])
         
         if is_advertiser:
-            keyboard.append([InlineKeyboardButton(text="Browse Channels", callback_data="browse_channels")])
-            keyboard.append([InlineKeyboardButton(text="My Orders", callback_data="my_orders")])
+            keyboard.append([InlineKeyboardButton(text="🔍 Browse Channels", callback_data="browse_channels")])
+            keyboard.append([InlineKeyboardButton(text="📦 My Orders", callback_data="my_orders")])
         
         if is_owner and not is_advertiser:
-            keyboard.append([InlineKeyboardButton(text="I also want to Advertise", callback_data="role_advertiser")])
+            keyboard.append([InlineKeyboardButton(text="➕ Also Advertise", callback_data="role_advertiser")])
         elif is_advertiser and not is_owner:
-            keyboard.append([InlineKeyboardButton(text="I also have a Channel", callback_data="role_channel_owner")])
+            keyboard.append([InlineKeyboardButton(text="➕ Add Channel", callback_data="role_channel_owner")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -205,18 +210,17 @@ async def cmd_start(message: Message, state: FSMContext):
         is_owner = result.get("is_channel_owner", False)
         is_advertiser = result.get("is_advertiser", False)
     
-    # Premium welcome message
-    welcome_text = f"{EMOJI['party']} Welcome to AdMarket!\n\n"
-    welcome_text += f"Hello {message.from_user.first_name or 'User'}! {EMOJI['rocket']}\n\n"
-    welcome_text += f"{create_separator('stars')}\n\n"
-    welcome_text += f"{EMOJI['broadcast']} Connect channels with advertisers\n"
-    welcome_text += f"{EMOJI['money']} Earn money or grow your brand\n"
-    welcome_text += f"{EMOJI['chart_up']} Professional ad marketplace\n\n"
-    welcome_text += f"{create_separator('light')}\n\n"
-    welcome_text += f"{EMOJI['user']} Your Profile:\n"
-    welcome_text += f"  {EMOJI['badge']} {message.from_user.first_name or 'User'}\n"
-    welcome_text += f"  {EMOJI['link']} @{message.from_user.username or 'Not set'}\n\n"
-    welcome_text += f"{EMOJI['target']} Choose your role below:"
+    welcome_text = (
+        f"Hello {message.from_user.first_name} 🎉\n\n"
+        f"◆ ◆ ◆ ◆ ◆ ◆ ◆ ◆ ◆ ◆\n\n"
+        f"📢 Connect channels with advertisers\n"
+        f"💰 Earn money or grow your brand\n"
+        f"📊 Professional ad marketplace\n\n"
+        f"👤 Your Profile:\n"
+        f"🏆 {message.from_user.first_name or 'User'}\n"
+        f"🔗 @{message.from_user.username or 'Not set'}\n\n"
+        f"🎯 Choose your role below:"
+    )
     
     keyboard = create_main_menu_keyboard(is_owner, is_advertiser)
     await message.answer(welcome_text, reply_markup=keyboard)
@@ -225,23 +229,23 @@ async def cmd_start(message: Message, state: FSMContext):
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     """Handle /help command"""
-    help_text = f"{EMOJI['info']} AdMarket Help Center\n\n"
-    help_text += f"{create_separator('medium')}\n\n"
-    help_text += f"{EMOJI['owner']} For Channel Owners:\n"
-    help_text += f"  {EMOJI['add']} Add your channels\n"
-    help_text += f"  {EMOJI['money']} Set custom pricing\n"
-    help_text += f"  {EMOJI['approve']} Approve ad creatives\n"
-    help_text += f"  {EMOJI['profit']} Track earnings\n\n"
-    help_text += f"{EMOJI['advertiser']} For Advertisers:\n"
-    help_text += f"  {EMOJI['browse']} Browse channels\n"
-    help_text += f"  {EMOJI['shop']} Purchase ad slots\n"
-    help_text += f"  {EMOJI['send']} Submit creatives\n"
-    help_text += f"  {EMOJI['order']} Track orders\n\n"
-    help_text += f"{create_separator('light')}\n\n"
-    help_text += f"{EMOJI['menu']} Commands:\n"
-    help_text += f"  /start - Main menu\n"
-    help_text += f"  /help - This message\n"
-    help_text += f"  /stats - View statistics"
+    help_text = (
+        "Telegram Ads Marketplace\n\n"
+        "For Channel Owners:\n"
+        "- Add channels\n"
+        "- Set pricing\n"
+        "- Approve ads\n"
+        "- Earn money\n\n"
+        "For Advertisers:\n"
+        "- Browse channels\n"
+        "- Purchase ads\n"
+        "- Submit creatives\n"
+        "- Track orders\n\n"
+        "Commands:\n"
+        "/start - Main menu\n"
+        "/help - This message\n"
+        "/stats - Statistics"
+    )
     await message.answer(help_text)
 
 
@@ -252,21 +256,21 @@ async def cmd_stats(message: Message):
     
     if "error" in stats:
         logger.error(f"Stats fetch failed: {stats['error']}")
-        stats_text = f"{EMOJI['chart_up']} Marketplace Statistics\n\n"
-        stats_text += f"{create_separator('light')}\n\n"
-        stats_text += f"{EMOJI['users']} Users: 0\n"
-        stats_text += f"{EMOJI['channel']} Channels: 0\n"
-        stats_text += f"{EMOJI['order']} Orders: 0\n"
-        stats_text += f"{EMOJI['fire']} Active: 0"
+        stats_text = (
+            "Statistics\n\n"
+            "Users: 0\n"
+            "Channels: 0\n"
+            "Orders: 0\n"
+            "Active: 0"
+        )
     else:
-        stats_text = f"{EMOJI['dashboard']} Marketplace Statistics\n\n"
-        stats_text += f"{create_separator('stars')}\n\n"
-        stats_text += f"{EMOJI['users']} Total Users: {stats.get('total_users', 0)}\n"
-        stats_text += f"{EMOJI['channel']} Total Channels: {stats.get('total_channels', 0)}\n"
-        stats_text += f"{EMOJI['order']} Total Orders: {stats.get('total_orders', 0)}\n"
-        stats_text += f"{EMOJI['fire']} Active Now: {stats.get('active_orders', 0)}\n\n"
-        stats_text += f"{create_separator('light')}\n\n"
-        stats_text += f"{EMOJI['rocket']} Platform growing daily!"
+        stats_text = (
+            "Marketplace Statistics\n\n"
+            f"Users: {stats.get('total_users', 0)}\n"
+            f"Channels: {stats.get('total_channels', 0)}\n"
+            f"Orders: {stats.get('total_orders', 0)}\n"
+            f"Active: {stats.get('active_orders', 0)}"
+        )
     
     await message.answer(stats_text)
 
@@ -289,17 +293,9 @@ async def callback_role_channel_owner(callback: CallbackQuery):
     if "error" in result:
         await callback.answer("Failed to update role - Try again", show_alert=True)
     else:
-        await callback.answer(f"{EMOJI['success']} Role updated successfully!", show_alert=False)
+        await callback.answer("Role updated - You are now a Channel Owner", show_alert=False)
     
-    text = f"{EMOJI['owner']} Channel Owner Dashboard\n\n"
-    text += f"{create_separator('stars')}\n\n"
-    text += f"{EMOJI['money']} List your channels and earn money\n"
-    text += f"{EMOJI['chart_up']} Set your own pricing\n"
-    text += f"{EMOJI['approve']} Approve quality ads\n"
-    text += f"{EMOJI['profit']} Track your earnings\n\n"
-    text += f"{create_separator('light')}\n\n"
-    text += f"{EMOJI['target']} Choose an action below:"
-    
+    text = "Channel Owner Menu\n\nList your channels and earn money"
     await callback.message.edit_text(text, reply_markup=create_channel_owner_menu())
 
 
@@ -317,17 +313,9 @@ async def callback_role_advertiser(callback: CallbackQuery):
     if "error" in result:
         await callback.answer("Failed to update role - Try again", show_alert=True)
     else:
-        await callback.answer(f"{EMOJI['success']} Role updated successfully!", show_alert=False)
+        await callback.answer("Role updated - You are now an Advertiser", show_alert=False)
     
-    text = f"{EMOJI['advertiser']} Advertiser Dashboard\n\n"
-    text += f"{create_separator('stars')}\n\n"
-    text += f"{EMOJI['browse']} Find perfect channels for your ads\n"
-    text += f"{EMOJI['shop']} Purchase ad slots easily\n"
-    text += f"{EMOJI['send']} Submit creative content\n"
-    text += f"{EMOJI['chart_up']} Track campaign performance\n\n"
-    text += f"{create_separator('light')}\n\n"
-    text += f"{EMOJI['target']} Choose an action below:"
-    
+    text = "Advertiser Menu\n\nFind channels for your ads"
     await callback.message.edit_text(text, reply_markup=create_advertiser_menu())
 
 
