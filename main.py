@@ -165,6 +165,25 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/users/telegram/{telegram_id}")
+async def get_user_by_telegram(telegram_id: int, db: Session = Depends(get_db)):
+    """Get user by Telegram ID (alternative endpoint)"""
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {
+        "id": user.id,
+        "telegram_id": user.telegram_id,
+        "username": user.username,
+        "first_name": user.first_name,
+        "is_channel_owner": user.is_channel_owner,
+        "is_advertiser": user.is_advertiser,
+        "created_at": user.created_at.isoformat()
+    }
+
+
 @app.patch("/users/{telegram_id}")
 async def update_user_role(
     telegram_id: int,
@@ -440,9 +459,14 @@ async def get_order(order_id: int, db: Session = Depends(get_db)):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
+    # Get buyer telegram_id
+    buyer = db.query(User).filter(User.id == order.buyer_id).first()
+    buyer_telegram_id = buyer.telegram_id if buyer else None
+    
     return {
         "id": order.id,
         "buyer_id": order.buyer_id,
+        "buyer_telegram_id": buyer_telegram_id,
         "channel_id": order.channel_id,
         "ad_type": order.ad_type,
         "price": order.price,
