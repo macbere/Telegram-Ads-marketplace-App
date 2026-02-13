@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from pathlib import Path
 import logging
@@ -75,7 +75,7 @@ async def root():
         "status": "running",
         "service": "Telegram Ads Marketplace API",
         "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -105,7 +105,7 @@ async def health_check(db: Session = Depends(get_db)):
     return {
         "status": "healthy",
         "database": db_status,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -587,8 +587,300 @@ async def get_stats(db: Session = Depends(get_db)):
         "total_channels": total_channels,
         "total_orders": total_orders,
         "active_orders": active_orders,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+# ============================================================================
+# REVIEWS & RATINGS - PHASE 6 NEW
+# ============================================================================
+
+@app.post("/reviews/")
+async def create_review(
+    reviewer_telegram_id: int,
+    reviewee_telegram_id: int,
+    rating: int,
+    comment: str = None,
+    order_id: int = None,
+    db: Session = Depends(get_db)
+):
+    """Create a review"""
+    from models import Review, User
+    
+    # Get users
+    reviewer = db.query(User).filter(User.telegram_id == reviewer_telegram_id).first()
+    reviewee = db.query(User).filter(User.telegram_id == reviewee_telegram_id).first()
+    
+    if not reviewer or not reviewee:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create review
+    review = Review(
+        reviewer_id=reviewer.id,
+        reviewee_id=reviewee.id,
+        rating=rating,
+        comment=comment,
+        order_id=order_id
+    )
+    
+    db.add(review)
+    
+    # Update reviewee's rating
+    reviews = db.query(Review).filter(Review.reviewee_id == reviewee.id).all()
+    avg_rating = sum([r.rating for r in reviews]) / len(reviews) if reviews else rating
+    reviewee.rating = avg_rating
+    
+    db.commit()
+    db.refresh(review)
+    
+    return {
+        "id": review.id,
+        "rating": review.rating,
+        "comment": review.comment,
+        "created_at": review.created_at.isoformat()
+    }
+
+
+@app.get("/reviews/user/{telegram_id}")
+async def get_user_reviews(telegram_id: int, db: Session = Depends(get_db)):
+    """Get all reviews for a user"""
+    from models import Review, User
+    
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    if not user:
+        return []
+    
+    reviews = db.query(Review).filter(Review.reviewee_id == user.id).all()
+    
+    result = []
+    for review in reviews:
+        reviewer = db.query(User).filter(User.id == review.reviewer_id).first()
+        result.append({
+            "id": review.id,
+            "reviewer_name": reviewer.first_name if reviewer else "Unknown",
+            "rating": review.rating,
+            "comment": review.comment,
+            "created_at": review.created_at.isoformat()
+        })
+    
+    return result
+
+
+# ============================================================================
+# DISCOUNT CODES - PHASE 6 NEW
+# ============================================================================
+
+@app.post("/discounts/")
+async def create_discount_code(
+    code: str,
+    discount_type: str,
+    discount_value: float,
+    min_order_value: float = 0.0,
+    max_uses: int = None,
+    valid_until: str = None,
+    db: Session = Depends(get_db)
+):
+    """Create a discount code"""
+    from models import DiscountCode
+    
+    discount = DiscountCode(
+        code=code.upper(),
+        discount_type=discount_type,
+        discount_value=discount_value,
+        min_order_value=min_order_value,
+        max_uses=max_uses,
+        valid_until=datetime.fromisoformat(valid_until) if valid_until else None
+    )
+    
+    db.add(discount)
+    db.commit()
+    db.refresh(discount)
+    
+    return {
+        "id": discount.id,
+        "code": discount.code,
+        "discount_type": discount.discount_type,
+        "discount_value": discount.discount_value
+    }
+
+
+@app.get("/discounts/{code}")
+async def validate_discount_code(code: str, order_value: float, db: Session = Depends(get_db)):
+    """Validate and apply discount code"""
+    from models import DiscountCode
+    
+    discount = db.query(DiscountCode).filter(
+        DiscountCode.code == code.upper(),
+        DiscountCode.is_active == True
+    ).first()
+    
+    if not discount:
+        raise HTTPException(status_code=404, detail="Invalid discount code")
+    
+    # Check expiry
+    if discount.valid_until and datetime.now(timezone.utc) > discount.valid_until:
+        raise HTTPException(status_code=400, detail="Discount code expired")
+    
+    # Check max uses
+    if discount.max_uses and discount.current_uses >= discount.max_uses:
+        raise HTTPException(status_code=400, detail="Discount code limit reached")
+    
+    # Check minimum order value
+    if order_value < discount.min_order_value:
+        raise HTTPException(status_code=400, detail=f"Minimum order value is {discount.min_order_value}")
+    
+    # Calculate discount
+    if discount.discount_type == "percentage":
+        discount_amount = (order_value * discount.discount_value) / 100
+    else:  # fixed
+        discount_amount = discount.discount_value
+    
+    final_price = max(0, order_value - discount_amount)
+    
+    return {
+        "valid": True,
+        "discount_amount": discount_amount,
+        "final_price": final_price,
+        "code": discount.code
+    }
+
+
+# ============================================================================
+# SCHEDULED POSTS - PHASE 6 NEW
+# ============================================================================
+
+@app.post("/scheduled-posts/")
+async def create_scheduled_post(
+    order_id: int,
+    scheduled_time: str,
+    db: Session = Depends(get_db)
+):
+    """Schedule a post for future posting"""
+    from models import ScheduledPost
+    
+    scheduled_post = ScheduledPost(
+        order_id=order_id,
+        scheduled_time=datetime.fromisoformat(scheduled_time),
+        status="pending"
+    )
+    
+    db.add(scheduled_post)
+    db.commit()
+    db.refresh(scheduled_post)
+    
+    return {
+        "id": scheduled_post.id,
+        "order_id": scheduled_post.order_id,
+        "scheduled_time": scheduled_post.scheduled_time.isoformat(),
+        "status": scheduled_post.status
+    }
+
+
+@app.get("/scheduled-posts/pending")
+async def get_pending_scheduled_posts(db: Session = Depends(get_db)):
+    """Get all pending scheduled posts"""
+    from models import ScheduledPost
+    
+    now = datetime.now(timezone.utc)
+    posts = db.query(ScheduledPost).filter(
+        ScheduledPost.status == "pending",
+        ScheduledPost.scheduled_time <= now
+    ).all()
+    
+    return [{"id": p.id, "order_id": p.order_id, "scheduled_time": p.scheduled_time.isoformat()} for p in posts]
+
+
+# ============================================================================
+# PACKAGE DEALS - PHASE 6 NEW
+# ============================================================================
+
+@app.post("/packages/")
+async def create_package_deal(
+    channel_id: int,
+    name: str,
+    ad_types: dict,
+    original_price: float,
+    package_price: float,
+    description: str = None,
+    db: Session = Depends(get_db)
+):
+    """Create a package deal"""
+    from models import PackageDeal
+    
+    savings = original_price - package_price
+    
+    package = PackageDeal(
+        channel_id=channel_id,
+        name=name,
+        description=description,
+        ad_types=ad_types,
+        original_price=original_price,
+        package_price=package_price,
+        savings=savings
+    )
+    
+    db.add(package)
+    db.commit()
+    db.refresh(package)
+    
+    return {
+        "id": package.id,
+        "name": package.name,
+        "package_price": package.package_price,
+        "savings": package.savings
+    }
+
+
+@app.get("/packages/channel/{channel_id}")
+async def get_channel_packages(channel_id: int, db: Session = Depends(get_db)):
+    """Get all packages for a channel"""
+    from models import PackageDeal
+    
+    packages = db.query(PackageDeal).filter(
+        PackageDeal.channel_id == channel_id,
+        PackageDeal.is_active == True
+    ).all()
+    
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "ad_types": p.ad_types,
+            "original_price": p.original_price,
+            "package_price": p.package_price,
+            "savings": p.savings
+        }
+        for p in packages
+    ]
+
+
+# ============================================================================
+# ANALYTICS - PHASE 6 NEW
+# ============================================================================
+
+@app.get("/analytics/channel/{channel_id}")
+async def get_channel_analytics(channel_id: int, days: int = 30, db: Session = Depends(get_db)):
+    """Get channel analytics"""
+    from models import ChannelAnalytics
+    
+    from_date = datetime.now(timezone.utc) - __import__('datetime').timedelta(days=days)
+    
+    analytics = db.query(ChannelAnalytics).filter(
+        ChannelAnalytics.channel_id == channel_id,
+        ChannelAnalytics.date >= from_date
+    ).all()
+    
+    return [
+        {
+            "date": a.date.isoformat(),
+            "subscribers": a.subscribers,
+            "total_views": a.total_views,
+            "total_posts": a.total_posts,
+            "avg_engagement": a.avg_engagement
+        }
+        for a in analytics
+    ]
 
 
 # ============================================================================
