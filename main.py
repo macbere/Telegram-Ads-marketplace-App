@@ -16,7 +16,7 @@ import logging
 import asyncio
 import os
 
-from database import engine, get_db, init_db
+from database import engine, get_db, init_db, SessionLocal
 from models import Base, User, Channel, Order, ChannelStats
 import bot
 
@@ -33,6 +33,45 @@ async def lifespan(app: FastAPI):
     # Initialize database
     logger.info("📊 Initializing database...")
     init_db()
+    
+    # Run migrations for Phase 6
+    logger.info("🔄 Running database migrations...")
+    try:
+        from sqlalchemy import text
+        db = SessionLocal()
+        try:
+            migrations = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS rating FLOAT DEFAULT 0.0",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_spent FLOAT DEFAULT 0.0",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_earned FLOAT DEFAULT 0.0",
+                "ALTER TABLE channels ADD COLUMN IF NOT EXISTS category VARCHAR DEFAULT 'general'",
+                "ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE channels ADD COLUMN IF NOT EXISTS rating FLOAT DEFAULT 0.0",
+                "ALTER TABLE channels ADD COLUMN IF NOT EXISTS total_orders INTEGER DEFAULT 0",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_code VARCHAR",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount FLOAT DEFAULT 0.0",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS final_price FLOAT",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS scheduled_post_time TIMESTAMP",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS post_views INTEGER DEFAULT 0",
+                "ALTER TABLE posts ADD COLUMN IF NOT EXISTS likes INTEGER DEFAULT 0",
+                "ALTER TABLE posts ADD COLUMN IF NOT EXISTS shares INTEGER DEFAULT 0",
+            ]
+            
+            for migration in migrations:
+                db.execute(text(migration))
+            
+            db.execute(text("UPDATE orders SET final_price = price WHERE final_price IS NULL"))
+            db.commit()
+            logger.info("✅ Migrations completed")
+        except Exception as e:
+            logger.warning(f"Migration note: {str(e)[:80]}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+    
     logger.info("✅ Database initialized")
     
     # Start bot
