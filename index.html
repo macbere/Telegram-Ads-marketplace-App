@@ -1220,12 +1220,9 @@
             }
         }
 
-        // Send bot command
+        // Send bot command - Use simple command instead of sendData
         function sendBotCommand() {
-            // Send command to bot
-            tg.sendData(JSON.stringify({ action: 'add_channel' }));
-            
-            // Update UI to show progress - DON'T close the Web App!
+            // Show progress screen immediately
             const content = document.getElementById('addChannelContent');
             content.innerHTML = `
                 <div class="channel-card">
@@ -1237,37 +1234,38 @@
                         
                         <div style="background: var(--bg-primary); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
                             <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                                <div style="background: var(--success); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: white;">✓</div>
+                                <div style="background: var(--accent); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: white;">1</div>
                                 <div>
-                                    <strong>Bot notified</strong>
-                                    <div style="color: var(--text-secondary); font-size: 13px;">Check your bot chat</div>
+                                    <strong>Next: Open bot chat</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px;">Minimize this app and open bot</div>
                                 </div>
                             </div>
                             
                             <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                                <div style="background: var(--accent); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: white;">2</div>
+                                <div style="background: var(--border); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: var(--text-secondary);">2</div>
                                 <div>
-                                    <strong>Next: Forward a message</strong>
-                                    <div style="color: var(--text-secondary); font-size: 13px;">From your channel TO the bot chat</div>
+                                    <strong>Send: /addchannel</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px;">Type this command in bot chat</div>
                                 </div>
                             </div>
                             
                             <div style="display: flex; align-items: center;">
                                 <div style="background: var(--border); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: var(--text-secondary);">3</div>
                                 <div>
-                                    <strong>Set pricing</strong>
-                                    <div style="color: var(--text-secondary); font-size: 13px;">Bot will ask for prices</div>
+                                    <strong>Forward channel message</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px;">Then follow bot instructions</div>
                                 </div>
                             </div>
                         </div>
                         
                         <div style="padding: 16px; background: rgba(51, 144, 236, 0.1); border-radius: 12px; border: 1px solid var(--accent); margin-bottom: 16px;">
-                            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">📱 What to do now:</div>
+                            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">📱 Quick Steps:</div>
                             <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
                                 1. Keep this Web App open<br>
-                                2. Go to bot chat (swipe or minimize)<br>
-                                3. Follow bot instructions<br>
-                                4. Come back here when done!
+                                2. Go to bot chat<br>
+                                3. Type: <code style="background: var(--bg-card); padding: 2px 6px; border-radius: 4px;">/addchannel</code><br>
+                                4. Forward your channel message<br>
+                                5. Come back here and click "Check Status"
                             </div>
                         </div>
                         
@@ -1276,6 +1274,9 @@
                     </div>
                 </div>
             `;
+            
+            // Show alert with instructions
+            tg.showAlert('Go to bot chat and type: /addchannel');
         }
         
         // Check channel registration status
