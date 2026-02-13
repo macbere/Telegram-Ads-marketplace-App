@@ -219,10 +219,16 @@ async def cmd_start(message: Message, state: FSMContext):
         f"👤 Your Profile:\n"
         f"🏆 {message.from_user.first_name or 'User'}\n"
         f"🔗 @{message.from_user.username or 'Not set'}\n\n"
-        f"🎯 Choose your role below:"
+        f"👇 Open the marketplace to get started:"
     )
     
-    keyboard = create_main_menu_keyboard(is_owner, is_advertiser)
+    # ONLY Web App button - everything else in the marketplace!
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🌐 Open Marketplace",
+            web_app=WebAppInfo(url=WEB_APP_URL)
+        )]
+    ])
     await message.answer(welcome_text, reply_markup=keyboard)
 
 
