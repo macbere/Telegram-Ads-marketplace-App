@@ -243,7 +243,7 @@ async def cmd_add_channel(message: Message, state: FSMContext):
         text = (
             "Add Your Channel ➕\n\n"
             "Steps:\n"
-            "1. Add @trust_ad_marketplace_bot as Administrator\n"
+            "1. Add this bot as Administrator to your channel\n"
             "2. Enable Post Messages permission\n"
             "3. Forward any message from your channel here\n\n"
             "Ready? Forward a channel message now 👇"
