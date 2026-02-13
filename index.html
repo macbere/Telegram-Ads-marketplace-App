@@ -16,6 +16,7 @@
             --text-secondary: #8e8e93;
             --accent: #3390ec;
             --success: #34c759;
+            --danger: #ff453a;
             --border: #2c2c2e;
         }
         
@@ -32,6 +33,19 @@
             padding: 16px 20px;
             border-bottom: 1px solid var(--border);
             z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .back-btn {
+            font-size: 24px;
+            cursor: pointer;
+            display: none;
+        }
+        
+        .back-btn.visible {
+            display: block;
         }
         
         .logo {
@@ -40,6 +54,7 @@
             gap: 10px;
             font-size: 20px;
             font-weight: 600;
+            flex: 1;
         }
         
         .logo-icon {
@@ -146,6 +161,17 @@
             padding: 8px;
             border-radius: 8px;
             text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .price-tag:hover {
+            border: 1px solid var(--accent);
+        }
+        
+        .price-tag.selected {
+            border: 2px solid var(--accent);
+            background: rgba(51, 144, 236, 0.1);
         }
         
         .price-label {
@@ -160,16 +186,66 @@
             margin-top: 4px;
         }
         
-        .buy-btn {
+        .btn {
             width: 100%;
             padding: 12px;
-            background: var(--accent);
             border: none;
             border-radius: 10px;
-            color: white;
             font-size: 15px;
             font-weight: 600;
-            margin-top: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+        
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .input-group {
+            margin-bottom: 16px;
+        }
+        
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .input-field {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 15px;
+        }
+        
+        .input-field:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        textarea.input-field {
+            min-height: 100px;
+            resize: vertical;
         }
         
         .bottom-nav {
@@ -223,17 +299,100 @@
             margin-bottom: 16px;
             opacity: 0.3;
         }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-pending {
+            background: rgba(255, 159, 10, 0.2);
+            color: #ff9f0a;
+        }
+        
+        .status-paid {
+            background: rgba(52, 199, 89, 0.2);
+            color: #34c759;
+        }
+        
+        .status-submitted {
+            background: rgba(51, 144, 236, 0.2);
+            color: #3390ec;
+        }
+        
+        .status-posted {
+            background: rgba(52, 199, 89, 0.2);
+            color: #34c759;
+        }
+        
+        .file-upload {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .file-upload:hover {
+            border-color: var(--accent);
+        }
+        
+        .file-upload input {
+            display: none;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        
+        .btn-group {
+            display: grid;
+            gap: 12px;
+            margin-top: 16px;
+        }
     </style>
 </head>
 <body>
     <div class="header">
+        <div class="back-btn" id="backBtn" onclick="goBack()">←</div>
         <div class="logo">
             <div class="logo-icon">📢</div>
-            <span>Ads Marketplace</span>
+            <span id="headerTitle">Ads Marketplace</span>
         </div>
     </div>
 
     <div class="content">
+        <!-- Home View -->
         <div id="homeView">
             <h2 class="section-title">Quick Actions</h2>
             <div class="action-grid">
@@ -264,47 +423,80 @@
             </div>
         </div>
 
+        <!-- Browse Channels View -->
         <div id="browseView" class="hidden">
             <h2 class="section-title">Browse Channels</h2>
-            <div id="channelGrid" class="channel-grid">
-                <div class="loading">Loading channels...</div>
-            </div>
+            <div id="channelGrid" class="channel-grid"></div>
         </div>
 
+        <!-- Channel Details View -->
+        <div id="channelDetailsView" class="hidden">
+            <div id="channelDetailsContent"></div>
+        </div>
+
+        <!-- Purchase Flow View -->
+        <div id="purchaseView" class="hidden">
+            <h2 class="section-title">Confirm Purchase</h2>
+            <div id="purchaseContent"></div>
+        </div>
+
+        <!-- My Orders View -->
         <div id="myOrdersView" class="hidden">
             <h2 class="section-title">My Orders</h2>
-            <div id="ordersContainer">
-                <div class="loading">Loading orders...</div>
-            </div>
+            <div id="ordersContainer"></div>
         </div>
 
+        <!-- Order Details View -->
+        <div id="orderDetailsView" class="hidden">
+            <div id="orderDetailsContent"></div>
+        </div>
+
+        <!-- Submit Creative View -->
+        <div id="submitCreativeView" class="hidden">
+            <h2 class="section-title">Submit Your Ad</h2>
+            <div id="creativeForm"></div>
+        </div>
+
+        <!-- Add Channel View -->
         <div id="addChannelView" class="hidden">
             <h2 class="section-title">Add My Channel</h2>
-            <div class="empty-state">
-                <div class="empty-icon">➕</div>
-                <p>Forward a message from your channel to the bot to add it</p>
+            <div id="addChannelContent">
+                <div class="empty-state">
+                    <div class="empty-icon">➕</div>
+                    <p>To add your channel:</p>
+                    <ol style="text-align: left; margin: 20px auto; max-width: 300px;">
+                        <li style="margin: 8px 0;">Forward a message from your channel to the bot</li>
+                        <li style="margin: 8px 0;">Bot will verify you're an admin</li>
+                        <li style="margin: 8px 0;">Set your pricing</li>
+                        <li style="margin: 8px 0;">Channel goes live!</li>
+                    </ol>
+                    <button class="btn btn-primary" onclick="window.Telegram.WebApp.close()">Open Bot</button>
+                </div>
             </div>
         </div>
 
+        <!-- My Channels View -->
         <div id="myChannelsView" class="hidden">
             <h2 class="section-title">My Channels</h2>
-            <div id="myChannelsContainer">
-                <div class="loading">Loading channels...</div>
-            </div>
+            <div id="myChannelsContainer"></div>
         </div>
 
+        <!-- My Earnings View -->
         <div id="earningsView" class="hidden">
             <h2 class="section-title">My Earnings</h2>
-            <div id="earningsContainer">
-                <div class="loading">Loading earnings...</div>
-            </div>
+            <div id="earningsContainer"></div>
         </div>
 
+        <!-- Pending Orders View -->
         <div id="pendingView" class="hidden">
             <h2 class="section-title">Pending Orders</h2>
-            <div id="pendingContainer">
-                <div class="loading">Loading pending orders...</div>
-            </div>
+            <div id="pendingContainer"></div>
+        </div>
+
+        <!-- Review Order View -->
+        <div id="reviewOrderView" class="hidden">
+            <h2 class="section-title">Review Order</h2>
+            <div id="reviewOrderContent"></div>
         </div>
     </div>
 
@@ -338,11 +530,23 @@
 
         const userId = tg.initDataUnsafe?.user?.id || 0;
         const API_URL = 'https://telegram-ads-marketplace-app.onrender.com';
+        
+        let viewHistory = ['homeView'];
+        let currentChannel = null;
+        let currentOrder = null;
+        let selectedAdType = null;
 
-        function showView(viewId) {
+        // Navigation
+        function showView(viewId, addToHistory = true) {
             document.querySelectorAll('[id$="View"]').forEach(v => v.classList.add('hidden'));
             document.getElementById(viewId).classList.remove('hidden');
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            
+            if (addToHistory) {
+                viewHistory.push(viewId);
+            }
+            
+            updateBackButton();
+            updateHeader(viewId);
             
             switch(viewId) {
                 case 'browseView': loadChannels(); break;
@@ -350,12 +554,45 @@
                 case 'myChannelsView': loadMyChannels(); break;
                 case 'earningsView': loadEarnings(); break;
                 case 'pendingView': loadPendingOrders(); break;
-                case 'homeView':
-                    document.querySelectorAll('.nav-item')[0].classList.add('active');
-                    break;
             }
         }
 
+        function goBack() {
+            if (viewHistory.length > 1) {
+                viewHistory.pop();
+                const previousView = viewHistory[viewHistory.length - 1];
+                showView(previousView, false);
+            }
+        }
+
+        function updateBackButton() {
+            const backBtn = document.getElementById('backBtn');
+            if (viewHistory.length > 1) {
+                backBtn.classList.add('visible');
+            } else {
+                backBtn.classList.remove('visible');
+            }
+        }
+
+        function updateHeader(viewId) {
+            const titles = {
+                homeView: 'Ads Marketplace',
+                browseView: 'Browse Channels',
+                channelDetailsView: 'Channel Details',
+                purchaseView: 'Confirm Purchase',
+                myOrdersView: 'My Orders',
+                orderDetailsView: 'Order Details',
+                submitCreativeView: 'Submit Creative',
+                addChannelView: 'Add Channel',
+                myChannelsView: 'My Channels',
+                earningsView: 'My Earnings',
+                pendingView: 'Pending Orders',
+                reviewOrderView: 'Review Order'
+            };
+            document.getElementById('headerTitle').textContent = titles[viewId] || 'Ads Marketplace';
+        }
+
+        // Load Channels
         async function loadChannels() {
             try {
                 const response = await fetch(`${API_URL}/channels/`);
@@ -368,7 +605,7 @@
                 }
                 
                 grid.innerHTML = channels.map(ch => `
-                    <div class="channel-card">
+                    <div class="channel-card" onclick="viewChannelDetails(${ch.id})">
                         <div class="channel-header">📢</div>
                         <div class="channel-body">
                             <div class="channel-title">${ch.channel_title}</div>
@@ -390,7 +627,7 @@
                                     <div class="price-value">$${ch.pricing.repost || 0}</div>
                                 </div>
                             </div>
-                            <button class="buy-btn">Buy Ad Space</button>
+                            <button class="btn btn-primary" style="margin-top: 12px;">Buy Ad Space</button>
                         </div>
                     </div>
                 `).join('');
@@ -399,6 +636,153 @@
             }
         }
 
+        // View Channel Details
+        async function viewChannelDetails(channelId) {
+            try {
+                const response = await fetch(`${API_URL}/channels/${channelId}`);
+                currentChannel = await response.json();
+                
+                const content = document.getElementById('channelDetailsContent');
+                content.innerHTML = `
+                    <div class="channel-card">
+                        <div class="channel-header">📢</div>
+                        <div class="channel-body">
+                            <div class="channel-title">${currentChannel.channel_title}</div>
+                            <div class="channel-stats">
+                                <span>👥 ${currentChannel.subscribers || 0} subscribers</span>
+                                <span>👁️ ${currentChannel.avg_views || 0} avg views</span>
+                            </div>
+                            <p style="margin: 16px 0; color: var(--text-secondary);">Select an ad type to purchase:</p>
+                            <div class="pricing-grid">
+                                <div class="price-tag" onclick="selectAdType('post', ${currentChannel.pricing.post})">
+                                    <div class="price-label">Post</div>
+                                    <div class="price-value">$${currentChannel.pricing.post || 0}</div>
+                                </div>
+                                <div class="price-tag" onclick="selectAdType('story', ${currentChannel.pricing.story})">
+                                    <div class="price-label">Story</div>
+                                    <div class="price-value">$${currentChannel.pricing.story || 0}</div>
+                                </div>
+                                <div class="price-tag" onclick="selectAdType('repost', ${currentChannel.pricing.repost})">
+                                    <div class="price-label">Repost</div>
+                                    <div class="price-value">$${currentChannel.pricing.repost || 0}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                showView('channelDetailsView');
+            } catch (error) {
+                tg.showAlert('Error loading channel details');
+            }
+        }
+
+        // Select Ad Type
+        function selectAdType(type, price) {
+            selectedAdType = { type, price };
+            
+            // Update UI
+            document.querySelectorAll('.price-tag').forEach(tag => {
+                tag.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+            
+            // Show purchase confirmation
+            setTimeout(() => showPurchaseConfirmation(), 300);
+        }
+
+        // Show Purchase Confirmation
+        function showPurchaseConfirmation() {
+            const content = document.getElementById('purchaseContent');
+            content.innerHTML = `
+                <div class="channel-card">
+                    <div class="channel-body">
+                        <h3 style="margin-bottom: 16px;">Order Summary</h3>
+                        <div style="margin: 12px 0;">
+                            <strong>Channel:</strong> ${currentChannel.channel_title}
+                        </div>
+                        <div style="margin: 12px 0;">
+                            <strong>Ad Type:</strong> ${selectedAdType.type.charAt(0).toUpperCase() + selectedAdType.type.slice(1)}
+                        </div>
+                        <div style="margin: 12px 0;">
+                            <strong>Price:</strong> $${selectedAdType.price}
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-success" onclick="createOrder()">Confirm & Pay</button>
+                            <button class="btn" style="background: var(--bg-card);" onclick="goBack()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            showView('purchaseView');
+        }
+
+        // Create Order
+        async function createOrder() {
+            if (!userId) {
+                tg.showAlert('Please open from Telegram');
+                return;
+            }
+            
+            try {
+                tg.showAlert('Creating order...');
+                
+                const response = await fetch(`${API_URL}/orders/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        buyer_telegram_id: userId,
+                        channel_id: currentChannel.id,
+                        ad_type: selectedAdType.type,
+                        price: selectedAdType.price
+                    })
+                });
+                
+                const order = await response.json();
+                
+                if (order.error) {
+                    tg.showAlert('Error: ' + order.error);
+                    return;
+                }
+                
+                // Simulate payment
+                await simulatePayment(order.id);
+                
+            } catch (error) {
+                tg.showAlert('Error creating order');
+            }
+        }
+
+        // Simulate Payment
+        async function simulatePayment(orderId) {
+            try {
+                const response = await fetch(`${API_URL}/orders/${orderId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'paid',
+                        payment_method: 'simulated',
+                        payment_transaction_id: `SIM${orderId}_${Date.now()}`
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    tg.showAlert('Payment failed');
+                    return;
+                }
+                
+                tg.showAlert('Payment successful! Submit your creative next.');
+                showView('myOrdersView');
+                
+            } catch (error) {
+                tg.showAlert('Payment error');
+            }
+        }
+
+        // Load My Orders
         async function loadMyOrders() {
             if (!userId) {
                 document.getElementById('ordersContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>Please open from Telegram</p></div>';
@@ -415,23 +799,180 @@
                     return;
                 }
                 
-                container.innerHTML = orders.map(order => `
-                    <div class="channel-card" style="margin-bottom: 12px;">
-                        <div class="channel-body">
-                            <div class="channel-title">Order #${order.id}</div>
-                            <div class="channel-stats">
-                                <span>${order.ad_type}</span>
-                                <span>$${order.price}</span>
-                                <span>${order.status}</span>
+                container.innerHTML = orders.map(order => {
+                    const statusClass = {
+                        'pending_payment': 'status-pending',
+                        'paid': 'status-paid',
+                        'creative_submitted': 'status-submitted',
+                        'posted': 'status-posted'
+                    }[order.status] || 'status-pending';
+                    
+                    const statusText = {
+                        'pending_payment': 'Pending Payment',
+                        'paid': 'Paid - Submit Creative',
+                        'creative_submitted': 'Under Review',
+                        'posted': 'Posted'
+                    }[order.status] || order.status;
+                    
+                    let actionBtn = '';
+                    if (order.status === 'paid') {
+                        actionBtn = `<button class="btn btn-primary" style="margin-top: 12px;" onclick="startCreativeSubmission(${order.id})">Submit Creative</button>`;
+                    } else if (order.status === 'creative_submitted' || order.status === 'posted') {
+                        actionBtn = `<button class="btn" style="margin-top: 12px; background: var(--bg-card);" onclick="viewOrderDetails(${order.id})">View Details</button>`;
+                    }
+                    
+                    return `
+                        <div class="channel-card" style="margin-bottom: 12px;">
+                            <div class="channel-body">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <div class="channel-title">Order #${order.id}</div>
+                                    <span class="status-badge ${statusClass}">${statusText}</span>
+                                </div>
+                                <div class="channel-stats">
+                                    <span>${order.ad_type}</span>
+                                    <span>$${order.price}</span>
+                                </div>
+                                ${actionBtn}
                             </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } catch (error) {
-                document.getElementById('ordersContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No orders yet</p></div>';
+                document.getElementById('ordersContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>Error loading orders</p></div>';
             }
         }
 
+        // Start Creative Submission
+        function startCreativeSubmission(orderId) {
+            currentOrder = orderId;
+            
+            const form = document.getElementById('creativeForm');
+            form.innerHTML = `
+                <div class="channel-card">
+                    <div class="channel-body">
+                        <div class="input-group">
+                            <label class="input-label">Ad Text *</label>
+                            <textarea class="input-field" id="creativeText" placeholder="Enter your ad content..."></textarea>
+                        </div>
+                        
+                        <div class="input-group">
+                            <label class="input-label">Ad Media (Optional)</label>
+                            <div class="file-upload" onclick="document.getElementById('mediaFile').click()">
+                                <div style="font-size: 32px; margin-bottom: 8px;">📷</div>
+                                <div id="fileName">Click to upload image or video</div>
+                                <input type="file" id="mediaFile" accept="image/*,video/*" onchange="handleFileSelect(event)">
+                            </div>
+                        </div>
+                        
+                        <div class="btn-group">
+                            <button class="btn btn-success" onclick="submitCreative()">Submit Creative</button>
+                            <button class="btn" style="background: var(--bg-card);" onclick="showView('myOrdersView')">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            showView('submitCreativeView');
+        }
+
+        let selectedFile = null;
+        function handleFileSelect(event) {
+            selectedFile = event.target.files[0];
+            if (selectedFile) {
+                document.getElementById('fileName').textContent = selectedFile.name;
+            }
+        }
+
+        // Submit Creative
+        async function submitCreative() {
+            const text = document.getElementById('creativeText').value.trim();
+            
+            if (!text) {
+                tg.showAlert('Please enter ad text');
+                return;
+            }
+            
+            try {
+                tg.showAlert('Submitting creative...');
+                
+                // For now, we'll just submit text. File upload would require more backend work
+                const response = await fetch(`${API_URL}/orders/${currentOrder}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        creative_content: text,
+                        status: 'creative_submitted'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    tg.showAlert('Error submitting creative');
+                    return;
+                }
+                
+                tg.showAlert('Creative submitted! Channel owner will review it.');
+                showView('myOrdersView');
+                
+            } catch (error) {
+                tg.showAlert('Submission error');
+            }
+        }
+
+        // View Order Details
+        async function viewOrderDetails(orderId) {
+            try {
+                const response = await fetch(`${API_URL}/orders/${orderId}`);
+                const order = await response.json();
+                
+                const content = document.getElementById('orderDetailsContent');
+                
+                const statusText = {
+                    'pending_payment': 'Pending Payment',
+                    'paid': 'Paid - Awaiting Creative',
+                    'creative_submitted': 'Creative Submitted - Under Review',
+                    'posted': 'Posted to Channel'
+                }[order.status] || order.status;
+                
+                content.innerHTML = `
+                    <div class="channel-card">
+                        <div class="channel-body">
+                            <h3 style="margin-bottom: 16px;">Order #${order.id}</h3>
+                            <div style="margin: 12px 0;">
+                                <strong>Ad Type:</strong> ${order.ad_type}
+                            </div>
+                            <div style="margin: 12px 0;">
+                                <strong>Price:</strong> $${order.price}
+                            </div>
+                            <div style="margin: 12px 0;">
+                                <strong>Status:</strong> ${statusText}
+                            </div>
+                            ${order.creative_content ? `
+                                <div style="margin: 12px 0;">
+                                    <strong>Ad Content:</strong>
+                                    <div style="margin-top: 8px; padding: 12px; background: var(--bg-primary); border-radius: 8px;">
+                                        ${order.creative_content}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            ${order.post_url ? `
+                                <div style="margin: 12px 0;">
+                                    <strong>Post URL:</strong>
+                                    <a href="${order.post_url}" target="_blank" style="color: var(--accent);">${order.post_url}</a>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                showView('orderDetailsView');
+            } catch (error) {
+                tg.showAlert('Error loading order details');
+            }
+        }
+
+        // Load My Channels
         async function loadMyChannels() {
             if (!userId) {
                 document.getElementById('myChannelsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>Please open from Telegram</p></div>';
@@ -444,7 +985,7 @@
                 
                 const container = document.getElementById('myChannelsContainer');
                 if (!channels || channels.length === 0 || channels.error) {
-                    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No channels added yet</p></div>';
+                    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No channels added yet</p><button class="btn btn-primary" style="margin-top: 16px;" onclick="showView(\'addChannelView\')">Add Channel</button></div>';
                     return;
                 }
                 
@@ -456,14 +997,29 @@
                                 <span>👥 ${ch.subscribers || 0}</span>
                                 <span>Status: ${ch.status}</span>
                             </div>
+                            <div class="pricing-grid" style="margin-top: 12px;">
+                                <div class="price-tag">
+                                    <div class="price-label">Post</div>
+                                    <div class="price-value">$${ch.pricing.post || 0}</div>
+                                </div>
+                                <div class="price-tag">
+                                    <div class="price-label">Story</div>
+                                    <div class="price-value">$${ch.pricing.story || 0}</div>
+                                </div>
+                                <div class="price-tag">
+                                    <div class="price-label">Repost</div>
+                                    <div class="price-value">$${ch.pricing.repost || 0}</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `).join('');
             } catch (error) {
-                document.getElementById('myChannelsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No channels yet</p></div>';
+                document.getElementById('myChannelsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>Error loading channels</p></div>';
             }
         }
 
+        // Load Earnings
         async function loadEarnings() {
             document.getElementById('earningsContainer').innerHTML = `
                 <div class="channel-card">
@@ -479,10 +1035,155 @@
             `;
         }
 
+        // Load Pending Orders (for channel owners)
         async function loadPendingOrders() {
-            document.getElementById('pendingContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>No pending orders</p></div>';
+            if (!userId) {
+                document.getElementById('pendingContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Please open from Telegram</p></div>';
+                return;
+            }
+            
+            try {
+                // Get user's channels
+                const channelsResponse = await fetch(`${API_URL}/channels/owner/${userId}`);
+                const channels = await channelsResponse.json();
+                
+                if (!channels || channels.length === 0) {
+                    document.getElementById('pendingContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Add a channel first to see pending orders</p></div>';
+                    return;
+                }
+                
+                // Get pending orders for each channel
+                let allPending = [];
+                for (const channel of channels) {
+                    const ordersResponse = await fetch(`${API_URL}/orders/channel/${channel.id}`);
+                    const orders = await ordersResponse.json();
+                    
+                    if (orders && !orders.error) {
+                        const pending = orders.filter(o => o.status === 'creative_submitted');
+                        allPending = [...allPending, ...pending.map(o => ({...o, channel: channel.channel_title}))];
+                    }
+                }
+                
+                const container = document.getElementById('pendingContainer');
+                if (allPending.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>No pending orders</p></div>';
+                    return;
+                }
+                
+                container.innerHTML = allPending.map(order => `
+                    <div class="channel-card" style="margin-bottom: 12px;">
+                        <div class="channel-body">
+                            <div class="channel-title">Order #${order.id}</div>
+                            <div style="margin: 8px 0; color: var(--text-secondary);">Channel: ${order.channel}</div>
+                            <div class="channel-stats">
+                                <span>${order.ad_type}</span>
+                                <span>$${order.price}</span>
+                            </div>
+                            <button class="btn btn-primary" style="margin-top: 12px;" onclick="reviewOrder(${order.id})">Review Order</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('pendingContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Error loading pending orders</p></div>';
+            }
         }
 
+        // Review Order
+        async function reviewOrder(orderId) {
+            try {
+                const response = await fetch(`${API_URL}/orders/${orderId}`);
+                currentOrder = await response.json();
+                
+                const content = document.getElementById('reviewOrderContent');
+                content.innerHTML = `
+                    <div class="channel-card">
+                        <div class="channel-body">
+                            <h3 style="margin-bottom: 16px;">Order #${currentOrder.id}</h3>
+                            <div style="margin: 12px 0;">
+                                <strong>Ad Type:</strong> ${currentOrder.ad_type}
+                            </div>
+                            <div style="margin: 12px 0;">
+                                <strong>Price:</strong> $${currentOrder.price}
+                            </div>
+                            <div style="margin: 12px 0;">
+                                <strong>Ad Content:</strong>
+                                <div style="margin-top: 8px; padding: 12px; background: var(--bg-primary); border-radius: 8px;">
+                                    ${currentOrder.creative_content || 'No content'}
+                                </div>
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-success" onclick="approveOrder(${currentOrder.id})">Approve & Post</button>
+                                <button class="btn btn-danger" onclick="rejectOrder(${currentOrder.id})">Reject</button>
+                                <button class="btn" style="background: var(--bg-card);" onclick="showView('pendingView')">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                showView('reviewOrderView');
+            } catch (error) {
+                tg.showAlert('Error loading order');
+            }
+        }
+
+        // Approve Order
+        async function approveOrder(orderId) {
+            try {
+                tg.showAlert('Approving and posting...');
+                
+                const response = await fetch(`${API_URL}/orders/${orderId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'posted',
+                        post_url: `https://t.me/channel/${orderId}`
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    tg.showAlert('Error approving order');
+                    return;
+                }
+                
+                tg.showAlert('Order approved and posted!');
+                showView('pendingView');
+                
+            } catch (error) {
+                tg.showAlert('Approval error');
+            }
+        }
+
+        // Reject Order
+        async function rejectOrder(orderId) {
+            try {
+                tg.showAlert('Rejecting order...');
+                
+                const response = await fetch(`${API_URL}/orders/${orderId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'paid'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    tg.showAlert('Error rejecting order');
+                    return;
+                }
+                
+                tg.showAlert('Order rejected. User can resubmit.');
+                showView('pendingView');
+                
+            } catch (error) {
+                tg.showAlert('Rejection error');
+            }
+        }
+
+        // Initialize
         showView('homeView');
     </script>
 </body>
