@@ -6,12 +6,8 @@
     <title>Ads Marketplace</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -19,37 +15,25 @@
             --text-primary: #ffffff;
             --text-secondary: #8e8e93;
             --accent: #3390ec;
-            --accent-hover: #2b7de9;
             --success: #34c759;
             --border: #2c2c2e;
-            --shadow: rgba(0, 0, 0, 0.3);
         }
-
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            overflow-x: hidden;
         }
-
-        /* Header */
+        
         .header {
             position: sticky;
             top: 0;
             background: var(--bg-secondary);
             padding: 16px 20px;
             border-bottom: 1px solid var(--border);
-            backdrop-filter: blur(10px);
             z-index: 100;
-            box-shadow: 0 2px 10px var(--shadow);
         }
-
-        .header-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
+        
         .logo {
             display: flex;
             align-items: center;
@@ -57,7 +41,7 @@
             font-size: 20px;
             font-weight: 600;
         }
-
+        
         .logo-icon {
             width: 32px;
             height: 32px;
@@ -66,257 +50,116 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
         }
-
-        .header-actions {
-            display: flex;
-            gap: 12px;
-        }
-
-        .icon-btn {
-            width: 36px;
-            height: 36px;
-            background: var(--bg-card);
-            border: none;
-            border-radius: 8px;
-            color: var(--text-primary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .icon-btn:hover {
-            background: var(--accent);
-            transform: scale(1.05);
-        }
-
-        /* Navigation Tabs */
-        .nav-tabs {
-            display: flex;
-            gap: 8px;
-            padding: 16px 20px;
-            overflow-x: auto;
-            scrollbar-width: none;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
-        }
-
-        .nav-tabs::-webkit-scrollbar {
-            display: none;
-        }
-
-        .nav-tab {
-            padding: 8px 20px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            color: var(--text-secondary);
-            font-size: 14px;
-            font-weight: 500;
-            white-space: nowrap;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .nav-tab.active {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
-        }
-
-        /* Search Bar */
-        .search-container {
-            padding: 16px 20px;
-            background: var(--bg-secondary);
-        }
-
-        .search-box {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: var(--bg-card);
-            padding: 12px 16px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-        }
-
-        .search-input {
-            flex: 1;
-            background: none;
-            border: none;
-            color: var(--text-primary);
-            font-size: 15px;
-            outline: none;
-        }
-
-        .search-input::placeholder {
-            color: var(--text-secondary);
-        }
-
-        /* Filters */
-        .filters {
-            display: flex;
-            gap: 8px;
-            padding: 0 20px 16px;
-            overflow-x: auto;
-            scrollbar-width: none;
-        }
-
-        .filter-btn {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 16px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            color: var(--text-secondary);
-            font-size: 13px;
-            white-space: nowrap;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .filter-btn:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        /* Channel Grid */
+        
         .content {
             padding: 20px;
+            padding-bottom: 80px;
         }
-
+        
         .section-title {
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 16px;
-            padding: 0 4px;
         }
-
+        
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .action-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .action-card:active {
+            transform: scale(0.95);
+        }
+        
+        .action-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        
+        .action-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
         .channel-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: 1fr;
             gap: 16px;
-            margin-bottom: 32px;
         }
-
-        /* Channel Card */
+        
         .channel-card {
             background: var(--bg-card);
             border-radius: 16px;
-            overflow: hidden;
             border: 1px solid var(--border);
-            transition: all 0.3s;
-            cursor: pointer;
+            overflow: hidden;
         }
-
-        .channel-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 24px var(--shadow);
-            border-color: var(--accent);
-        }
-
+        
         .channel-header {
-            position: relative;
             height: 120px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow: hidden;
-        }
-
-        .channel-header::before {
-            content: '';
-            position: absolute;
-            width: 200%;
-            height: 200%;
-            background: repeating-linear-gradient(
-                45deg,
-                transparent,
-                transparent 10px,
-                rgba(255,255,255,0.05) 10px,
-                rgba(255,255,255,0.05) 20px
-            );
-            animation: slide 20s linear infinite;
-        }
-
-        @keyframes slide {
-            0% { transform: translate(-50%, -50%); }
-            100% { transform: translate(0%, 0%); }
-        }
-
-        .channel-icon {
             font-size: 48px;
-            z-index: 1;
         }
-
+        
         .channel-body {
             padding: 16px;
         }
-
+        
         .channel-title {
             font-size: 16px;
             font-weight: 600;
             margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
         }
-
-        .verified-badge {
-            color: var(--accent);
-            font-size: 16px;
-        }
-
+        
         .channel-stats {
             display: flex;
             gap: 16px;
             margin-bottom: 12px;
-        }
-
-        .stat {
-            display: flex;
-            align-items: center;
-            gap: 4px;
             font-size: 13px;
             color: var(--text-secondary);
         }
-
-        .stat-icon {
-            font-size: 14px;
-        }
-
+        
         .pricing-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 8px;
             margin-top: 12px;
         }
-
+        
         .price-tag {
             background: var(--bg-primary);
             padding: 8px;
             border-radius: 8px;
             text-align: center;
         }
-
+        
         .price-label {
             font-size: 11px;
             color: var(--text-secondary);
-            margin-bottom: 4px;
         }
-
+        
         .price-value {
             font-size: 14px;
             font-weight: 600;
             color: var(--success);
+            margin-top: 4px;
         }
-
+        
         .buy-btn {
             width: 100%;
             padding: 12px;
@@ -326,17 +169,9 @@
             color: white;
             font-size: 15px;
             font-weight: 600;
-            cursor: pointer;
             margin-top: 12px;
-            transition: all 0.2s;
         }
-
-        .buy-btn:hover {
-            background: var(--accent-hover);
-            transform: scale(1.02);
-        }
-
-        /* Bottom Navigation */
+        
         .bottom-nav {
             position: fixed;
             bottom: 0;
@@ -347,9 +182,8 @@
             display: flex;
             justify-content: space-around;
             padding: 12px 0;
-            backdrop-filter: blur(10px);
         }
-
+        
         .nav-item {
             display: flex;
             flex-direction: column;
@@ -358,337 +192,298 @@
             color: var(--text-secondary);
             font-size: 11px;
             cursor: pointer;
-            transition: all 0.2s;
         }
-
+        
         .nav-item.active {
             color: var(--accent);
         }
-
+        
         .nav-icon {
             font-size: 22px;
         }
-
-        /* Loading Animation */
+        
+        .hidden {
+            display: none !important;
+        }
+        
         .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            text-align: center;
             padding: 40px;
+            color: var(--text-secondary);
         }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--border);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Empty State */
+        
         .empty-state {
             text-align: center;
             padding: 60px 20px;
+            color: var(--text-secondary);
         }
-
+        
         .empty-icon {
             font-size: 64px;
             margin-bottom: 16px;
             opacity: 0.3;
         }
-
-        .empty-text {
-            font-size: 16px;
-            color: var(--text-secondary);
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .channel-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Premium Badge */
-        .premium-badge {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(255, 215, 0, 0.2);
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            color: #ffd700;
-            border: 1px solid #ffd700;
-            z-index: 2;
-        }
-
-        /* Trending Tag */
-        .trending-tag {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            background: rgba(255, 69, 58, 0.2);
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            color: #ff453a;
-            border: 1px solid #ff453a;
-            z-index: 2;
-        }
     </style>
 </head>
 <body>
-    <!-- Header -->
     <div class="header">
-        <div class="header-content">
-            <div class="logo">
-                <div class="logo-icon">📢</div>
-                <span>Ads Marketplace</span>
-            </div>
-            <div class="header-actions">
-                <button class="icon-btn">🔔</button>
-                <button class="icon-btn">⚙️</button>
-            </div>
+        <div class="logo">
+            <div class="logo-icon">📢</div>
+            <span>Ads Marketplace</span>
         </div>
     </div>
 
-    <!-- Navigation Tabs -->
-    <div class="nav-tabs">
-        <div class="nav-tab active">🔥 Trending</div>
-        <div class="nav-tab">💎 Premium</div>
-        <div class="nav-tab">🎯 Gaming</div>
-        <div class="nav-tab">💰 Crypto</div>
-        <div class="nav-tab">🎬 Entertainment</div>
-        <div class="nav-tab">📱 Tech</div>
-    </div>
-
-    <!-- Search Bar -->
-    <div class="search-container">
-        <div class="search-box">
-            <span>🔍</span>
-            <input type="text" class="search-input" placeholder="Search channels...">
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="filters">
-        <button class="filter-btn">
-            <span>📊</span>
-            <span>Collections</span>
-            <span>▼</span>
-        </button>
-        <button class="filter-btn">
-            <span>💰</span>
-            <span>Price</span>
-        </button>
-        <button class="filter-btn">
-            <span>⬆️⬇️</span>
-            <span>Sort</span>
-        </button>
-        <button class="icon-btn">☰</button>
-        <button class="icon-btn">▦</button>
-    </div>
-
-    <!-- Content -->
     <div class="content">
-        <h2 class="section-title">Featured Channels</h2>
-        
-        <div class="channel-grid" id="channelGrid">
-            <!-- Channels will be loaded here -->
+        <div id="homeView">
+            <h2 class="section-title">Quick Actions</h2>
+            <div class="action-grid">
+                <div class="action-card" onclick="showView('browseView')">
+                    <div class="action-icon">🔍</div>
+                    <div class="action-title">Browse Channels</div>
+                </div>
+                <div class="action-card" onclick="showView('myOrdersView')">
+                    <div class="action-icon">📦</div>
+                    <div class="action-title">My Orders</div>
+                </div>
+                <div class="action-card" onclick="showView('addChannelView')">
+                    <div class="action-icon">➕</div>
+                    <div class="action-title">Add My Channel</div>
+                </div>
+                <div class="action-card" onclick="showView('myChannelsView')">
+                    <div class="action-icon">📊</div>
+                    <div class="action-title">My Channels</div>
+                </div>
+                <div class="action-card" onclick="showView('earningsView')">
+                    <div class="action-icon">💰</div>
+                    <div class="action-title">My Earnings</div>
+                </div>
+                <div class="action-card" onclick="showView('pendingView')">
+                    <div class="action-icon">⏳</div>
+                    <div class="action-title">Pending Orders</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="browseView" class="hidden">
+            <h2 class="section-title">Browse Channels</h2>
+            <div id="channelGrid" class="channel-grid">
+                <div class="loading">Loading channels...</div>
+            </div>
+        </div>
+
+        <div id="myOrdersView" class="hidden">
+            <h2 class="section-title">My Orders</h2>
+            <div id="ordersContainer">
+                <div class="loading">Loading orders...</div>
+            </div>
+        </div>
+
+        <div id="addChannelView" class="hidden">
+            <h2 class="section-title">Add My Channel</h2>
+            <div class="empty-state">
+                <div class="empty-icon">➕</div>
+                <p>Forward a message from your channel to the bot to add it</p>
+            </div>
+        </div>
+
+        <div id="myChannelsView" class="hidden">
+            <h2 class="section-title">My Channels</h2>
+            <div id="myChannelsContainer">
+                <div class="loading">Loading channels...</div>
+            </div>
+        </div>
+
+        <div id="earningsView" class="hidden">
+            <h2 class="section-title">My Earnings</h2>
+            <div id="earningsContainer">
+                <div class="loading">Loading earnings...</div>
+            </div>
+        </div>
+
+        <div id="pendingView" class="hidden">
+            <h2 class="section-title">Pending Orders</h2>
+            <div id="pendingContainer">
+                <div class="loading">Loading pending orders...</div>
+            </div>
         </div>
     </div>
 
-    <!-- Bottom Navigation -->
     <div class="bottom-nav">
-        <div class="nav-item active">
-            <div class="nav-icon">🛒</div>
-            <div>Market</div>
+        <div class="nav-item active" onclick="showView('homeView')">
+            <div class="nav-icon">🏠</div>
+            <div>Home</div>
         </div>
-        <div class="nav-item">
-            <div class="nav-icon">⭐</div>
-            <div>Favorites</div>
-        </div>
-        <div class="nav-item">
+        <div class="nav-item" onclick="showView('browseView')">
             <div class="nav-icon">🔍</div>
-            <div>Explore</div>
+            <div>Browse</div>
         </div>
-        <div class="nav-item">
-            <div class="nav-icon">🛍️</div>
+        <div class="nav-item" onclick="showView('myOrdersView')">
+            <div class="nav-icon">📦</div>
             <div>Orders</div>
         </div>
-        <div class="nav-item">
-            <div class="nav-icon">👤</div>
-            <div>Profile</div>
+        <div class="nav-item" onclick="showView('myChannelsView')">
+            <div class="nav-icon">📊</div>
+            <div>Channels</div>
+        </div>
+        <div class="nav-item" onclick="showView('earningsView')">
+            <div class="nav-icon">💰</div>
+            <div>Earnings</div>
         </div>
     </div>
 
     <script>
-        // Sample channel data
-        const channels = [
-            {
-                id: 1,
-                name: "Trust P2P",
-                icon: "💱",
-                subscribers: "50K",
-                avgViews: "12K",
-                verified: true,
-                premium: true,
-                trending: true,
-                pricing: {
-                    post: 100,
-                    story: 50,
-                    repost: 25
-                }
-            },
-            {
-                id: 2,
-                name: "Crypto News Daily",
-                icon: "₿",
-                subscribers: "125K",
-                avgViews: "45K",
-                verified: true,
-                premium: true,
-                trending: false,
-                pricing: {
-                    post: 250,
-                    story: 120,
-                    repost: 60
-                }
-            },
-            {
-                id: 3,
-                name: "Gaming Hub",
-                icon: "🎮",
-                subscribers: "85K",
-                avgViews: "28K",
-                verified: true,
-                premium: false,
-                trending: true,
-                pricing: {
-                    post: 150,
-                    story: 75,
-                    repost: 35
-                }
-            },
-            {
-                id: 4,
-                name: "Tech Reviews",
-                icon: "📱",
-                subscribers: "95K",
-                avgViews: "32K",
-                verified: true,
-                premium: false,
-                trending: false,
-                pricing: {
-                    post: 180,
-                    story: 90,
-                    repost: 45
-                }
-            },
-            {
-                id: 5,
-                name: "Forex Signals",
-                icon: "📈",
-                subscribers: "67K",
-                avgViews: "19K",
-                verified: true,
-                premium: true,
-                trending: true,
-                pricing: {
-                    post: 200,
-                    story: 100,
-                    repost: 50
-                }
-            },
-            {
-                id: 6,
-                name: "Movie Reviews",
-                icon: "🎬",
-                subscribers: "110K",
-                avgViews: "38K",
-                verified: true,
-                premium: false,
-                trending: false,
-                pricing: {
-                    post: 175,
-                    story: 85,
-                    repost: 40
-                }
-            }
-        ];
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
 
-        // Render channels
-        function renderChannels() {
-            const grid = document.getElementById('channelGrid');
-            grid.innerHTML = channels.map(channel => `
-                <div class="channel-card" onclick="viewChannel(${channel.id})">
-                    <div class="channel-header">
-                        ${channel.trending ? '<div class="trending-tag">🔥 Trending</div>' : ''}
-                        ${channel.premium ? '<div class="premium-badge">💎 Premium</div>' : ''}
-                        <div class="channel-icon">${channel.icon}</div>
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+        const API_URL = 'https://telegram-ads-marketplace-app.onrender.com';
+
+        function showView(viewId) {
+            document.querySelectorAll('[id$="View"]').forEach(v => v.classList.add('hidden'));
+            document.getElementById(viewId).classList.remove('hidden');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            
+            switch(viewId) {
+                case 'browseView': loadChannels(); break;
+                case 'myOrdersView': loadMyOrders(); break;
+                case 'myChannelsView': loadMyChannels(); break;
+                case 'earningsView': loadEarnings(); break;
+                case 'pendingView': loadPendingOrders(); break;
+                case 'homeView':
+                    document.querySelectorAll('.nav-item')[0].classList.add('active');
+                    break;
+            }
+        }
+
+        async function loadChannels() {
+            try {
+                const response = await fetch(`${API_URL}/channels/`);
+                const channels = await response.json();
+                
+                const grid = document.getElementById('channelGrid');
+                if (!channels || channels.length === 0) {
+                    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📢</div><p>No channels available yet</p></div>';
+                    return;
+                }
+                
+                grid.innerHTML = channels.map(ch => `
+                    <div class="channel-card">
+                        <div class="channel-header">📢</div>
+                        <div class="channel-body">
+                            <div class="channel-title">${ch.channel_title}</div>
+                            <div class="channel-stats">
+                                <span>👥 ${ch.subscribers || 0}</span>
+                                <span>👁️ ${ch.avg_views || 0}</span>
+                            </div>
+                            <div class="pricing-grid">
+                                <div class="price-tag">
+                                    <div class="price-label">Post</div>
+                                    <div class="price-value">$${ch.pricing.post || 0}</div>
+                                </div>
+                                <div class="price-tag">
+                                    <div class="price-label">Story</div>
+                                    <div class="price-value">$${ch.pricing.story || 0}</div>
+                                </div>
+                                <div class="price-tag">
+                                    <div class="price-label">Repost</div>
+                                    <div class="price-value">$${ch.pricing.repost || 0}</div>
+                                </div>
+                            </div>
+                            <button class="buy-btn">Buy Ad Space</button>
+                        </div>
                     </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('channelGrid').innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>Error loading channels</p></div>';
+            }
+        }
+
+        async function loadMyOrders() {
+            if (!userId) {
+                document.getElementById('ordersContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>Please open from Telegram</p></div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/orders/user/${userId}`);
+                const orders = await response.json();
+                
+                const container = document.getElementById('ordersContainer');
+                if (!orders || orders.length === 0 || orders.error) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No orders yet</p></div>';
+                    return;
+                }
+                
+                container.innerHTML = orders.map(order => `
+                    <div class="channel-card" style="margin-bottom: 12px;">
+                        <div class="channel-body">
+                            <div class="channel-title">Order #${order.id}</div>
+                            <div class="channel-stats">
+                                <span>${order.ad_type}</span>
+                                <span>$${order.price}</span>
+                                <span>${order.status}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('ordersContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No orders yet</p></div>';
+            }
+        }
+
+        async function loadMyChannels() {
+            if (!userId) {
+                document.getElementById('myChannelsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>Please open from Telegram</p></div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/channels/owner/${userId}`);
+                const channels = await response.json();
+                
+                const container = document.getElementById('myChannelsContainer');
+                if (!channels || channels.length === 0 || channels.error) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No channels added yet</p></div>';
+                    return;
+                }
+                
+                container.innerHTML = channels.map(ch => `
+                    <div class="channel-card" style="margin-bottom: 12px;">
+                        <div class="channel-body">
+                            <div class="channel-title">${ch.channel_title}</div>
+                            <div class="channel-stats">
+                                <span>👥 ${ch.subscribers || 0}</span>
+                                <span>Status: ${ch.status}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('myChannelsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No channels yet</p></div>';
+            }
+        }
+
+        async function loadEarnings() {
+            document.getElementById('earningsContainer').innerHTML = `
+                <div class="channel-card">
                     <div class="channel-body">
-                        <div class="channel-title">
-                            ${channel.name}
-                            ${channel.verified ? '<span class="verified-badge">✓</span>' : ''}
-                        </div>
+                        <div class="channel-title">Total Earnings</div>
+                        <div style="font-size: 32px; font-weight: 600; color: var(--success); margin: 16px 0;">$0.00</div>
                         <div class="channel-stats">
-                            <div class="stat">
-                                <span class="stat-icon">👥</span>
-                                <span>${channel.subscribers}</span>
-                            </div>
-                            <div class="stat">
-                                <span class="stat-icon">👁️</span>
-                                <span>${channel.avgViews}</span>
-                            </div>
+                            <span>Completed: 0</span>
+                            <span>Pending: 0</span>
                         </div>
-                        <div class="pricing-grid">
-                            <div class="price-tag">
-                                <div class="price-label">Post</div>
-                                <div class="price-value">$${channel.pricing.post}</div>
-                            </div>
-                            <div class="price-tag">
-                                <div class="price-label">Story</div>
-                                <div class="price-value">$${channel.pricing.story}</div>
-                            </div>
-                            <div class="price-tag">
-                                <div class="price-label">Repost</div>
-                                <div class="price-value">$${channel.pricing.repost}</div>
-                            </div>
-                        </div>
-                        <button class="buy-btn">Buy Ad Space</button>
                     </div>
                 </div>
-            `).join('');
+            `;
         }
 
-        function viewChannel(id) {
-            console.log('Viewing channel:', id);
-            // This will integrate with your bot handlers
-            window.Telegram.WebApp.sendData(JSON.stringify({
-                action: 'view_channel',
-                channel_id: id
-            }));
+        async function loadPendingOrders() {
+            document.getElementById('pendingContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>No pending orders</p></div>';
         }
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            renderChannels();
-            
-            // Initialize Telegram WebApp
-            if (window.Telegram && window.Telegram.WebApp) {
-                window.Telegram.WebApp.ready();
-                window.Telegram.WebApp.expand();
-            }
-        });
+        showView('homeView');
     </script>
 </body>
 </html>
