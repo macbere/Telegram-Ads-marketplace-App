@@ -461,16 +461,53 @@
         <div id="addChannelView" class="hidden">
             <h2 class="section-title">Add My Channel</h2>
             <div id="addChannelContent">
-                <div class="empty-state">
-                    <div class="empty-icon">➕</div>
-                    <p>To add your channel:</p>
-                    <ol style="text-align: left; margin: 20px auto; max-width: 300px;">
-                        <li style="margin: 8px 0;">Forward a message from your channel to the bot</li>
-                        <li style="margin: 8px 0;">Bot will verify you're an admin</li>
-                        <li style="margin: 8px 0;">Set your pricing</li>
-                        <li style="margin: 8px 0;">Channel goes live!</li>
-                    </ol>
-                    <button class="btn btn-primary" onclick="window.Telegram.WebApp.close()">Open Bot</button>
+                <div class="channel-card">
+                    <div class="channel-body">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">➕</div>
+                            <h3 style="margin-bottom: 12px;">How to Add Your Channel</h3>
+                        </div>
+                        
+                        <div style="background: var(--bg-primary); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                            <div style="display: flex; align-items: start; margin-bottom: 12px;">
+                                <div style="background: var(--accent); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">1</div>
+                                <div>
+                                    <strong>Make bot an admin</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+                                        Go to your channel → Add @trust_ad_marketplace_bot as admin with "Post Messages" permission
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: start; margin-bottom: 12px;">
+                                <div style="background: var(--accent); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">2</div>
+                                <div>
+                                    <strong>Forward a message</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+                                        Forward any message FROM your channel TO the bot
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: start;">
+                                <div style="background: var(--accent); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">3</div>
+                                <div>
+                                    <strong>Set pricing</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px; margin-top: 4px;">
+                                        Bot will ask for your pricing → Done!
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="sendBotCommand()">Start Adding Channel</button>
+                        
+                        <div style="margin-top: 16px; padding: 12px; background: rgba(51, 144, 236, 0.1); border-radius: 8px; border: 1px solid var(--accent);">
+                            <div style="font-size: 13px; color: var(--text-secondary);">
+                                💡 <strong>Tip:</strong> The button above will send /start to the bot. Then forward a message from your channel to the bot chat.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1180,6 +1217,86 @@
                 
             } catch (error) {
                 tg.showAlert('Rejection error');
+            }
+        }
+
+        // Send bot command
+        function sendBotCommand() {
+            // Send command to bot
+            tg.sendData(JSON.stringify({ action: 'add_channel' }));
+            
+            // Update UI to show progress - DON'T close the Web App!
+            const content = document.getElementById('addChannelContent');
+            content.innerHTML = `
+                <div class="channel-card">
+                    <div class="channel-body">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+                            <h3 style="margin-bottom: 12px; color: var(--accent);">Registration Started!</h3>
+                        </div>
+                        
+                        <div style="background: var(--bg-primary); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                            <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                                <div style="background: var(--success); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: white;">✓</div>
+                                <div>
+                                    <strong>Bot notified</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px;">Check your bot chat</div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                                <div style="background: var(--accent); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: white;">2</div>
+                                <div>
+                                    <strong>Next: Forward a message</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px;">From your channel TO the bot chat</div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: center;">
+                                <div style="background: var(--border); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; color: var(--text-secondary);">3</div>
+                                <div>
+                                    <strong>Set pricing</strong>
+                                    <div style="color: var(--text-secondary); font-size: 13px;">Bot will ask for prices</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 16px; background: rgba(51, 144, 236, 0.1); border-radius: 12px; border: 1px solid var(--accent); margin-bottom: 16px;">
+                            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">📱 What to do now:</div>
+                            <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+                                1. Keep this Web App open<br>
+                                2. Go to bot chat (swipe or minimize)<br>
+                                3. Follow bot instructions<br>
+                                4. Come back here when done!
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="checkChannelStatus()">Check Status</button>
+                        <button class="btn" style="background: var(--bg-card); margin-top: 12px;" onclick="showView('homeView')">Back to Home</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Check channel registration status
+        async function checkChannelStatus() {
+            if (!userId) {
+                tg.showAlert('Please open from Telegram');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/channels/owner/${userId}`);
+                const channels = await response.json();
+                
+                if (channels && channels.length > 0 && !channels.error) {
+                    tg.showAlert('Success! Channel added.');
+                    showView('myChannelsView');
+                } else {
+                    tg.showAlert('Not yet - Keep following bot instructions');
+                }
+            } catch (error) {
+                tg.showAlert('Still in progress - Keep going in bot chat');
             }
         }
 
