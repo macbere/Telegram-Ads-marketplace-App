@@ -232,6 +232,38 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(welcome_text, reply_markup=keyboard)
 
 
+@router.message(F.web_app_data)
+async def handle_web_app_data(message: Message, state: FSMContext):
+    """Handle data sent from Web App"""
+    logger.info(f"Web App data from {message.from_user.id}: {message.web_app_data.data}")
+    
+    try:
+        import json
+        data = json.loads(message.web_app_data.data)
+        action = data.get('action')
+        
+        if action == 'add_channel':
+            # Start channel registration flow
+            await state.clear()
+            
+            text = (
+                "Add Your Channel ➕\n\n"
+                "Steps:\n"
+                "1. Add @trust_ad_marketplace_bot as Administrator\n"
+                "2. Enable Post Messages permission\n"
+                "3. Forward any message from your channel here\n\n"
+                "Ready? Forward a channel message now 👇"
+            )
+            
+            await message.answer(text)
+            await state.set_state(ChannelRegistration.waiting_for_forward)
+            logger.info(f"Channel registration started for {message.from_user.id}")
+            
+    except Exception as e:
+        logger.error(f"Error handling web app data: {e}")
+        await message.answer("Error - Please try /start")
+
+
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     """Handle /help command"""
