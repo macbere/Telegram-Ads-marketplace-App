@@ -57,6 +57,16 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE orders ADD COLUMN IF NOT EXISTS post_views INTEGER DEFAULT 0",
                 "ALTER TABLE posts ADD COLUMN IF NOT EXISTS likes INTEGER DEFAULT 0",
                 "ALTER TABLE posts ADD COLUMN IF NOT EXISTS shares INTEGER DEFAULT 0",
+                # CONTEST MVP: Escrow & Delivery columns
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS escrow_status VARCHAR DEFAULT 'pending'",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS escrow_held_at TIMESTAMP",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS escrow_released_at TIMESTAMP",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS escrow_amount FLOAT",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_confirmed BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_confirmed_at TIMESTAMP",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_confirmed_by VARCHAR",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS auto_posted BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS auto_posted_at TIMESTAMP",
             ]
             
             for migration in migrations:
@@ -567,7 +577,7 @@ async def update_order(
     update_data: dict,
     db: Session = Depends(get_db)
 ):
-    """Update order details"""
+    """Update order details with escrow support"""
     order = db.query(Order).filter(Order.id == order_id).first()
     
     if not order:
@@ -575,7 +585,25 @@ async def update_order(
     
     # Update fields from JSON body
     if "status" in update_data:
-        order.status = update_data["status"]
+        old_status = order.status
+        new_status = update_data["status"]
+        order.status = new_status
+        
+        # CONTEST MVP: Escrow logic based on status changes
+        if new_status == "paid" and old_status == "pending_payment":
+            # Payment received → Hold in escrow
+            order.escrow_status = "held"
+            order.escrow_amount = order.final_price or order.price
+            order.escrow_held_at = datetime.now(timezone.utc)
+            order.paid_at = datetime.now(timezone.utc)
+            logger.info(f"💰 Escrow held: ${order.escrow_amount} for order {order.id}")
+            
+        elif new_status == "posted" and old_status == "creative_submitted":
+            # Creative approved → Auto-post and mark for delivery confirmation
+            order.auto_posted = True
+            order.auto_posted_at = datetime.now(timezone.utc)
+            logger.info(f"📢 Auto-posted order {order.id}")
+    
     if "payment_method" in update_data:
         order.payment_method = update_data["payment_method"]
     if "payment_transaction_id" in update_data:
@@ -599,11 +627,135 @@ async def update_order(
     return {
         "id": order.id,
         "status": order.status,
+        "escrow_status": order.escrow_status,
+        "escrow_amount": order.escrow_amount,
+        "auto_posted": order.auto_posted,
+        "delivery_confirmed": order.delivery_confirmed,
         "payment_method": order.payment_method,
         "payment_transaction_id": order.payment_transaction_id,
         "creative_content": order.creative_content,
-        "creative_media_id": order.creative_media_id,
         "post_url": order.post_url
+    }
+
+
+# ============================================================================
+# CONTEST MVP: ESCROW & DELIVERY ENDPOINTS
+# ============================================================================
+
+@app.post("/orders/{order_id}/confirm-delivery")
+async def confirm_delivery(
+    order_id: int,
+    confirmed_by: str,  # "buyer" or "auto"
+    db: Session = Depends(get_db)
+):
+    """
+    CONTEST MVP: Confirm delivery and release escrow
+    This simulates the complete flow: approval → posting → delivery → payment release
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.escrow_status != "held":
+        raise HTTPException(status_code=400, detail="Escrow not held for this order")
+    
+    # Mark delivery as confirmed
+    order.delivery_confirmed = True
+    order.delivery_confirmed_at = datetime.now(timezone.utc)
+    order.delivery_confirmed_by = confirmed_by
+    
+    # Release escrow to channel owner
+    order.escrow_status = "released"
+    order.escrow_released_at = datetime.now(timezone.utc)
+    order.status = "completed"
+    order.completed_at = datetime.now(timezone.utc)
+    
+    # Update channel owner's earnings
+    channel = order.channel
+    channel_owner = db.query(User).filter(User.telegram_id == channel.owner_telegram_id).first()
+    if channel_owner:
+        channel_owner.total_earned = (channel_owner.total_earned or 0) + order.escrow_amount
+    
+    db.commit()
+    db.refresh(order)
+    
+    logger.info(f"✅ Delivery confirmed and escrow released: ${order.escrow_amount} for order {order.id}")
+    
+    return {
+        "id": order.id,
+        "status": order.status,
+        "escrow_status": order.escrow_status,
+        "escrow_amount": order.escrow_amount,
+        "delivery_confirmed": True,
+        "delivery_confirmed_at": order.delivery_confirmed_at.isoformat(),
+        "message": f"Delivery confirmed. ${order.escrow_amount} released to channel owner."
+    }
+
+
+@app.post("/orders/{order_id}/refund")
+async def refund_order(
+    order_id: int,
+    reason: str,
+    db: Session = Depends(get_db)
+):
+    """
+    CONTEST MVP: Refund order and return escrow to buyer
+    Used when there's a dispute or cancellation
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.escrow_status != "held":
+        raise HTTPException(status_code=400, detail="Escrow not held for this order")
+    
+    # Refund escrow to buyer
+    order.escrow_status = "refunded"
+    order.status = "refunded"
+    order.notes = f"Refunded: {reason}"
+    
+    # Update buyer's total spent (subtract refunded amount)
+    buyer = order.buyer
+    buyer.total_spent = max(0, (buyer.total_spent or 0) - order.escrow_amount)
+    
+    db.commit()
+    db.refresh(order)
+    
+    logger.info(f"💸 Order refunded: ${order.escrow_amount} returned to buyer for order {order.id}")
+    
+    return {
+        "id": order.id,
+        "status": order.status,
+        "escrow_status": order.escrow_status,
+        "escrow_amount": order.escrow_amount,
+        "message": f"Order refunded. ${order.escrow_amount} returned to buyer."
+    }
+
+
+@app.get("/orders/{order_id}/escrow-status")
+async def get_escrow_status(order_id: int, db: Session = Depends(get_db)):
+    """
+    CONTEST MVP: Get detailed escrow status for an order
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    return {
+        "order_id": order.id,
+        "escrow_status": order.escrow_status,
+        "escrow_amount": order.escrow_amount,
+        "escrow_held_at": order.escrow_held_at.isoformat() if order.escrow_held_at else None,
+        "escrow_released_at": order.escrow_released_at.isoformat() if order.escrow_released_at else None,
+        "delivery_confirmed": order.delivery_confirmed,
+        "delivery_confirmed_at": order.delivery_confirmed_at.isoformat() if order.delivery_confirmed_at else None,
+        "delivery_confirmed_by": order.delivery_confirmed_by,
+        "auto_posted": order.auto_posted,
+        "auto_posted_at": order.auto_posted_at.isoformat() if order.auto_posted_at else None,
+        "order_status": order.status
     }
 
 
