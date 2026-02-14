@@ -106,6 +106,22 @@ class Order(Base):
     post_url = Column(String, nullable=True)
     post_views = Column(Integer, default=0)  # NEW: Track views
     notes = Column(Text, nullable=True)
+    
+    # CONTEST MVP: Escrow system (simulated)
+    escrow_status = Column(String, default="pending")  # pending, held, released, refunded
+    escrow_held_at = Column(DateTime, nullable=True)
+    escrow_released_at = Column(DateTime, nullable=True)
+    escrow_amount = Column(Float, nullable=True)
+    
+    # CONTEST MVP: Delivery confirmation
+    delivery_confirmed = Column(Boolean, default=False)
+    delivery_confirmed_at = Column(DateTime, nullable=True)
+    delivery_confirmed_by = Column(String, nullable=True)  # buyer or auto
+    
+    # CONTEST MVP: Auto-posting
+    auto_posted = Column(Boolean, default=False)
+    auto_posted_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     paid_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
