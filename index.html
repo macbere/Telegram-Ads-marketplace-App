@@ -1276,21 +1276,35 @@
                         'pending_payment': 'status-pending',
                         'paid': 'status-paid',
                         'creative_submitted': 'status-submitted',
-                        'posted': 'status-posted'
+                        'posted': 'status-posted',
+                        'completed': 'status-posted',
+                        'refunded': 'status-pending'
                     }[order.status] || 'status-pending';
                     
                     const statusText = {
                         'pending_payment': 'Pending Payment',
                         'paid': 'Paid - Submit Creative',
                         'creative_submitted': 'Under Review',
-                        'posted': 'Posted'
+                        'posted': 'Posted',
+                        'completed': 'Completed ✅',
+                        'refunded': 'Refunded'
                     }[order.status] || order.status;
+                    
+                    // CONTEST MVP: Escrow status badge
+                    const escrowBadge = order.escrow_status ? {
+                        'pending': '<span style="font-size: 11px; color: var(--warning);">⏳ Escrow Pending</span>',
+                        'held': '<span style="font-size: 11px; color: var(--accent);">🔒 Escrow Held</span>',
+                        'released': '<span style="font-size: 11px; color: var(--success);">✅ Escrow Released</span>',
+                        'refunded': '<span style="font-size: 11px; color: var(--danger);">💸 Refunded</span>'
+                    }[order.escrow_status] || '' : '';
                     
                     let actionBtn = '';
                     if (order.status === 'paid') {
-                        actionBtn = `<button class="btn btn-primary" style="margin-top: 12px;" onclick="startCreativeSubmission(${order.id})">Submit Creative</button>`;
-                    } else if (order.status === 'posted') {
-                        actionBtn = `<button class="btn" style="margin-top: 12px; background: var(--bg-card);" onclick="showReviewForm(${order.id}, ${order.channel.owner_telegram_id})">Leave Review</button>`;
+                        actionBtn = `<button class="btn btn-primary" style="margin-top: 12px;" onclick="event.stopPropagation(); startCreativeSubmission(${order.id})">Submit Creative</button>`;
+                    } else if (order.status === 'posted' && !order.delivery_confirmed) {
+                        actionBtn = `<button class="btn btn-success" style="margin-top: 12px;" onclick="event.stopPropagation(); confirmDelivery(${order.id})">✅ Confirm Delivery</button>`;
+                    } else if (order.status === 'posted' || order.status === 'completed') {
+                        actionBtn = `<button class="btn" style="margin-top: 12px; background: var(--bg-card);" onclick="event.stopPropagation(); showReviewForm(${order.id}, ${order.channel.owner_telegram_id})">Leave Review</button>`;
                     }
                     
                     const discountInfo = order.discount_amount > 0 ? 
@@ -1299,8 +1313,11 @@
                     return `
                         <div class="channel-card" style="margin-bottom: 12px;" onclick="viewOrderDetails(${order.id})">
                             <div class="channel-body">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                    <div class="channel-title">Order #${order.id}</div>
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                    <div>
+                                        <div class="channel-title">Order #${order.id}</div>
+                                        ${escrowBadge}
+                                    </div>
                                     <span class="status-badge ${statusClass}">${statusText}</span>
                                 </div>
                                 <div class="channel-stats">
@@ -1329,19 +1346,42 @@
                     'pending_payment': 'Pending Payment',
                     'paid': 'Paid - Awaiting Creative',
                     'creative_submitted': 'Creative Submitted - Under Review',
-                    'posted': 'Posted to Channel'
+                    'posted': 'Posted to Channel',
+                    'completed': 'Completed',
+                    'refunded': 'Refunded'
                 }[order.status] || order.status;
+                
+                // CONTEST MVP: Escrow status display
+                const escrowStatusText = {
+                    'pending': '⏳ Pending',
+                    'held': '🔒 Held in Escrow',
+                    'released': '✅ Released',
+                    'refunded': '💸 Refunded'
+                }[order.escrow_status] || order.escrow_status;
+                
+                const escrowStatusColor = {
+                    'pending': 'var(--warning)',
+                    'held': 'var(--accent)',
+                    'released': 'var(--success)',
+                    'refunded': 'var(--danger)'
+                }[order.escrow_status] || 'var(--text-secondary)';
+                
+                // Show delivery confirmation button if order is posted and not yet confirmed
+                const showDeliveryButton = (order.status === 'posted' && !order.delivery_confirmed);
                 
                 content.innerHTML = `
                     <div class="channel-card">
                         <div class="channel-body">
                             <h3 style="margin-bottom: 16px;">Order #${order.id}</h3>
+                            
                             <div style="margin: 12px 0;">
                                 <strong>Ad Type:</strong> ${order.ad_type}
                             </div>
+                            
                             <div style="margin: 12px 0;">
                                 <strong>Original Price:</strong> $${order.price}
                             </div>
+                            
                             ${order.discount_amount > 0 ? `
                                 <div style="margin: 12px 0;">
                                     <strong>Discount:</strong> <span style="color: var(--success);">-$${order.discount_amount}</span>
@@ -1350,9 +1390,48 @@
                                     <strong>Final Price:</strong> <span style="color: var(--success);">$${order.final_price}</span>
                                 </div>
                             ` : ''}
+                            
                             <div style="margin: 12px 0;">
-                                <strong>Status:</strong> ${statusText}
+                                <strong>Order Status:</strong> ${statusText}
                             </div>
+                            
+                            <!-- CONTEST MVP: ESCROW STATUS -->
+                            <div style="margin: 16px 0; padding: 16px; background: var(--bg-primary); border-radius: 12px; border: 2px solid ${escrowStatusColor};">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong style="font-size: 15px;">💰 Escrow Status</strong>
+                                    <span style="color: ${escrowStatusColor}; font-weight: 600;">${escrowStatusText}</span>
+                                </div>
+                                <div style="color: var(--text-secondary); font-size: 13px; margin-bottom: 6px;">
+                                    Amount: $${order.escrow_amount || order.final_price || order.price}
+                                </div>
+                                ${order.escrow_held_at ? `
+                                    <div style="color: var(--text-secondary); font-size: 12px;">
+                                        Held: ${new Date(order.escrow_held_at).toLocaleString()}
+                                    </div>
+                                ` : ''}
+                                ${order.escrow_released_at ? `
+                                    <div style="color: var(--success); font-size: 12px;">
+                                        Released: ${new Date(order.escrow_released_at).toLocaleString()}
+                                    </div>
+                                ` : ''}
+                                ${order.delivery_confirmed ? `
+                                    <div style="margin-top: 8px; padding: 8px; background: rgba(52,199,89,0.1); border-radius: 6px;">
+                                        <strong style="color: var(--success);">✅ Delivery Confirmed</strong>
+                                        <div style="font-size: 12px; color: var(--text-secondary);">
+                                            By: ${order.delivery_confirmed_by || 'system'}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                ${order.auto_posted ? `
+                                    <div style="margin-top: 8px; padding: 8px; background: rgba(51,144,236,0.1); border-radius: 6px;">
+                                        <strong style="color: var(--accent);">📢 Auto-Posted</strong>
+                                        <div style="font-size: 12px; color: var(--text-secondary);">
+                                            ${new Date(order.auto_posted_at).toLocaleString()}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
                             ${order.creative_content ? `
                                 <div style="margin: 12px 0;">
                                     <strong>Ad Content:</strong>
@@ -1361,11 +1440,19 @@
                                     </div>
                                 </div>
                             ` : ''}
+                            
                             ${order.post_url ? `
                                 <div style="margin: 12px 0;">
                                     <strong>Post URL:</strong>
                                     <a href="${order.post_url}" target="_blank" style="color: var(--accent);">${order.post_url}</a>
                                 </div>
+                            ` : ''}
+                            
+                            <!-- CONTEST MVP: DELIVERY CONFIRMATION BUTTON -->
+                            ${showDeliveryButton ? `
+                                <button class="btn btn-success" style="margin-top: 16px;" onclick="confirmDelivery(${order.id})">
+                                    ✅ Confirm Delivery & Release Escrow
+                                </button>
                             ` : ''}
                         </div>
                     </div>
@@ -1374,6 +1461,47 @@
                 showView('orderDetailsView');
             } catch (error) {
                 tg.showAlert('Error loading order details');
+            }
+        }
+        
+        // CONTEST MVP: Confirm Delivery Function
+        async function confirmDelivery(orderId) {
+            if (!confirm('Confirm that you received this ad posting? This will release payment to the channel owner.')) {
+                return;
+            }
+            
+            try {
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = 'Processing...';
+                
+                const response = await fetch(`${API_URL}/orders/${orderId}/confirm-delivery`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        confirmed_by: 'buyer'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    tg.showAlert('Error: ' + result.error);
+                    btn.disabled = false;
+                    btn.textContent = '✅ Confirm Delivery & Release Escrow';
+                    return;
+                }
+                
+                tg.showPopup({
+                    title: 'Delivery Confirmed!',
+                    message: `Payment of $${result.escrow_amount} has been released to the channel owner.`,
+                    buttons: [{type: 'ok'}]
+                }, () => {
+                    viewOrderDetails(orderId); // Reload to show updated status
+                });
+                
+            } catch (error) {
+                tg.showAlert('Error confirming delivery');
             }
         }
 
