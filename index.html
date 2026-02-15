@@ -1094,6 +1094,33 @@
                             <strong>Price:</strong> $${selectedAdType.price}
                         </div>
                         
+                        <!-- CONTEST MVP: ESCROW EXPLANATION - BEFORE PAYMENT -->
+                        <div style="margin: 20px 0; padding: 16px; background: linear-gradient(135deg, rgba(51,144,236,0.15) 0%, rgba(51,144,236,0.05) 100%); border-radius: 12px; border: 2px solid var(--accent);">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                                <div style="font-size: 32px;">🔒</div>
+                                <div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--accent);">Secure Escrow Payment</div>
+                                    <div style="font-size: 13px; color: var(--text-secondary);">Your money is protected</div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">💰 How Escrow Works:</div>
+                                <div style="font-size: 13px; line-height: 1.6; color: var(--text-secondary);">
+                                    1. <strong>Your payment is held securely</strong> - not given to seller yet<br>
+                                    2. Channel owner reviews your ad<br>
+                                    3. Ad gets posted to the channel<br>
+                                    4. You confirm delivery<br>
+                                    5. <strong>Payment is released</strong> to the seller
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; gap: 8px; align-items: center; padding: 8px; background: rgba(52,199,89,0.1); border-radius: 6px;">
+                                <span style="font-size: 16px;">✅</span>
+                                <span style="font-size: 12px; color: var(--success); font-weight: 600;">100% BUYER PROTECTION - Get refund if ad is not delivered</span>
+                            </div>
+                        </div>
+                        
                         <div class="discount-input-group">
                             <input type="text" class="input-field" id="discountCode" placeholder="Discount code (optional)" style="text-transform: uppercase;">
                             <button class="discount-apply-btn" onclick="applyDiscount()">Apply</button>
@@ -1111,13 +1138,13 @@
                                 <span id="discountAmount">-$0</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600; padding-top: 8px; border-top: 1px solid var(--border);">
-                                <span>Total:</span>
+                                <span>Total (Held in Escrow):</span>
                                 <span id="totalPrice" style="color: var(--success);">$${selectedAdType.price}</span>
                             </div>
                         </div>
                         
                         <div class="btn-group">
-                            <button class="btn btn-success" onclick="createOrder()">Confirm & Pay</button>
+                            <button class="btn btn-success" onclick="createOrder()">🔒 Pay with Escrow Protection</button>
                             <button class="btn" style="background: var(--bg-card);" onclick="goBack()">Cancel</button>
                         </div>
                     </div>
@@ -1234,11 +1261,15 @@
                     return;
                 }
                 
+                // CONTEST MVP: Clear escrow message
+                const escrowAmount = result.escrow_amount || selectedAdType.price;
+                const message = appliedDiscount ? 
+                    `🔒 $${escrowAmount} held securely in escrow!\n\nYou saved $${appliedDiscount.discount_amount}.\n\nNext: Submit your ad creative. Payment will be released to seller after delivery confirmation.` :
+                    `🔒 $${escrowAmount} held securely in escrow!\n\nYour payment is protected until ad is delivered.\n\nNext: Submit your ad creative.`;
+                
                 tg.showPopup({
-                    title: 'Success!',
-                    message: appliedDiscount ? 
-                        `Payment successful! You saved $${appliedDiscount.discount_amount}. Submit your ad creative next.` :
-                        'Payment successful! You can now submit your ad creative.',
+                    title: 'Payment Successful!',
+                    message: message,
                     buttons: [{type: 'ok'}]
                 }, () => {
                     showView('myOrdersView');
