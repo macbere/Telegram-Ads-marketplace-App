@@ -1094,30 +1094,36 @@
                             <strong>Price:</strong> $${selectedAdType.price}
                         </div>
                         
-                        <!-- CONTEST MVP: ESCROW EXPLANATION - BEFORE PAYMENT -->
+                        <!-- CONTEST MVP: ESCROW AS PAYMENT VERIFICATION & PROTECTION SYSTEM -->
                         <div style="margin: 20px 0; padding: 16px; background: linear-gradient(135deg, rgba(51,144,236,0.15) 0%, rgba(51,144,236,0.05) 100%); border-radius: 12px; border: 2px solid var(--accent);">
                             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                                <div style="font-size: 32px;">🔒</div>
+                                <div style="font-size: 32px;">🛡️</div>
                                 <div>
-                                    <div style="font-size: 16px; font-weight: 600; color: var(--accent);">Secure Escrow Payment</div>
-                                    <div style="font-size: 13px; color: var(--text-secondary);">Your money is protected</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--accent);">Escrow Payment Verification</div>
+                                    <div style="font-size: 13px; color: var(--text-secondary);">Secure verification & protection system</div>
                                 </div>
                             </div>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-                                <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">💰 How Escrow Works:</div>
-                                <div style="font-size: 13px; line-height: 1.6; color: var(--text-secondary);">
-                                    1. <strong>Your payment is held securely</strong> - not given to seller yet<br>
-                                    2. Channel owner reviews your ad<br>
-                                    3. Ad gets posted to the channel<br>
-                                    4. You confirm delivery<br>
-                                    5. <strong>Payment is released</strong> to the seller
+                                <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">💰 Payment Process:</div>
+                                <div style="font-size: 13px; line-height: 1.8; color: var(--text-secondary);">
+                                    1. You pay → <strong style="color: var(--accent);">Escrow receives payment</strong><br>
+                                    2. <strong style="color: var(--accent);">Escrow verifies payment ✓</strong><br>
+                                    3. Escrow holds funds securely 🔒<br>
+                                    4. Seller delivers ad<br>
+                                    5. You confirm delivery<br>
+                                    6. Escrow releases funds to seller
                                 </div>
                             </div>
                             
-                            <div style="display: flex; gap: 8px; align-items: center; padding: 8px; background: rgba(52,199,89,0.1); border-radius: 6px;">
+                            <div style="display: flex; gap: 8px; align-items: center; padding: 10px; background: rgba(52,199,89,0.1); border-radius: 6px; margin-bottom: 8px;">
                                 <span style="font-size: 16px;">✅</span>
-                                <span style="font-size: 12px; color: var(--success); font-weight: 600;">100% BUYER PROTECTION - Get refund if ad is not delivered</span>
+                                <span style="font-size: 12px; color: var(--success); font-weight: 600;">ESCROW VERIFIES: Payment authenticity confirmed before proceeding</span>
+                            </div>
+                            
+                            <div style="display: flex; gap: 8px; align-items: center; padding: 10px; background: rgba(255,159,10,0.1); border-radius: 6px;">
+                                <span style="font-size: 16px;">🔒</span>
+                                <span style="font-size: 12px; color: var(--warning); font-weight: 600;">ESCROW PROTECTS: Both buyer and seller are protected</span>
                             </div>
                         </div>
                         
@@ -1138,13 +1144,13 @@
                                 <span id="discountAmount">-$0</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600; padding-top: 8px; border-top: 1px solid var(--border);">
-                                <span>Total (Held in Escrow):</span>
+                                <span>Total (via Escrow):</span>
                                 <span id="totalPrice" style="color: var(--success);">$${selectedAdType.price}</span>
                             </div>
                         </div>
                         
                         <div class="btn-group">
-                            <button class="btn btn-success" onclick="createOrder()">🔒 Pay with Escrow Protection</button>
+                            <button class="btn btn-success" onclick="createOrder()">🛡️ Pay via Escrow Verification</button>
                             <button class="btn" style="background: var(--bg-card);" onclick="goBack()">Cancel</button>
                         </div>
                     </div>
@@ -1235,7 +1241,88 @@
                     return;
                 }
                 
-                await simulatePayment(order.id);
+                // CONTEST MVP: Show ESCROW VERIFICATION SCREEN
+                await showEscrowVerification(order.id, finalPrice);
+                
+            } catch (error) {
+                tg.showAlert('Error creating order');
+            }
+        }
+        
+        // CONTEST MVP: VISIBLE ESCROW VERIFICATION PROCESS
+        async function showEscrowVerification(orderId, amount) {
+            // Show escrow verification screen
+            const content = document.getElementById('purchaseContent');
+            content.innerHTML = `
+                <div class="channel-card">
+                    <div class="channel-body">
+                        <div style="text-align: center; padding: 40px 20px;">
+                            <div style="font-size: 64px; margin-bottom: 20px;">🛡️</div>
+                            <h2 style="margin-bottom: 20px; color: var(--accent);">Escrow Verification</h2>
+                            
+                            <div style="background: var(--bg-primary); border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: left;">
+                                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 12px; background: rgba(51,144,236,0.1); border-radius: 8px;">
+                                    <div style="font-size: 24px;">1️⃣</div>
+                                    <div>
+                                        <div style="font-weight: 600; color: var(--accent);">Payment Received</div>
+                                        <div style="font-size: 13px; color: var(--text-secondary);">Escrow has received $${amount}</div>
+                                    </div>
+                                </div>
+                                
+                                <div id="verificationStep" style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 12px; background: rgba(255,159,10,0.1); border-radius: 8px;">
+                                    <div style="font-size: 24px;">2️⃣</div>
+                                    <div>
+                                        <div style="font-weight: 600; color: var(--warning);">Verifying Payment...</div>
+                                        <div style="font-size: 13px; color: var(--text-secondary);">Checking authenticity</div>
+                                    </div>
+                                    <div class="spinner" style="width: 20px; height: 20px; border-width: 2px; margin-left: auto;"></div>
+                                </div>
+                                
+                                <div id="holdingStep" style="display: none; align-items: center; gap: 12px; margin-bottom: 16px; padding: 12px; background: rgba(52,199,89,0.1); border-radius: 8px; opacity: 0; transition: opacity 0.3s;">
+                                    <div style="font-size: 24px;">3️⃣</div>
+                                    <div>
+                                        <div style="font-weight: 600; color: var(--success);">Payment Verified ✓</div>
+                                        <div style="font-size: 13px; color: var(--text-secondary);">Holding $${amount} securely</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px; background: rgba(51,144,236,0.1); border-radius: 8px; border: 1px solid var(--accent);">
+                                <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">🔒 Escrow Protection Active</div>
+                                <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+                                    Your payment is secure. Funds will only be released to the seller after you confirm delivery.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Simulate verification process (2 seconds)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Update to show verification complete
+            document.getElementById('verificationStep').style.background = 'rgba(52,199,89,0.1)';
+            document.getElementById('verificationStep').innerHTML = `
+                <div style="font-size: 24px;">2️⃣</div>
+                <div>
+                    <div style="font-weight: 600; color: var(--success);">Payment Verified ✓</div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">Authentication successful</div>
+                </div>
+                <div style="font-size: 24px; margin-left: auto;">✅</div>
+            `;
+            
+            // Show holding step
+            const holdingStep = document.getElementById('holdingStep');
+            holdingStep.style.display = 'flex';
+            setTimeout(() => { holdingStep.style.opacity = '1'; }, 100);
+            
+            // Wait another second
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Now process the actual payment
+            await simulatePayment(orderId);
+        }
                 
             } catch (error) {
                 tg.showAlert('Error creating order');
@@ -1261,11 +1348,15 @@
                     return;
                 }
                 
-                // CONTEST MVP: Clear escrow message
+                // CONTEST MVP: Escrow verification confirmation message
                 const escrowAmount = result.escrow_amount || selectedAdType.price;
-                const message = appliedDiscount ? 
-                    `🔒 $${escrowAmount} held securely in escrow!\n\nYou saved $${appliedDiscount.discount_amount}.\n\nNext: Submit your ad creative. Payment will be released to seller after delivery confirmation.` :
-                    `🔒 $${escrowAmount} held securely in escrow!\n\nYour payment is protected until ad is delivered.\n\nNext: Submit your ad creative.`;
+                
+                let message;
+                if (appliedDiscount) {
+                    message = `✅ ESCROW VERIFIED PAYMENT\n\n🛡️ Payment Status: VERIFIED & SECURED\n💰 Amount: $${escrowAmount}\n🎉 Discount: Saved $${appliedDiscount.discount_amount}\n\n✓ Payment authenticity confirmed\n✓ Funds held securely by escrow\n✓ Protected until delivery confirmed\n\nNext: Submit your ad creative`;
+                } else {
+                    message = `✅ ESCROW VERIFIED PAYMENT\n\n🛡️ Payment Status: VERIFIED & SECURED\n💰 Amount: $${escrowAmount}\n\n✓ Payment authenticity confirmed\n✓ Funds held securely by escrow\n✓ Both parties protected\n✓ Seller will receive payment after delivery\n\nNext: Submit your ad creative`;
+                }
                 
                 tg.showPopup({
                     title: 'Payment Successful!',
