@@ -1,78 +1,76 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DIAGNOSTIC - Ads Marketplace</title>
+    <title>TEST - Web App Working?</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             padding: 20px;
-            background: #000;
-            color: #fff;
+            background: #1a1a1a;
+            color: white;
         }
-        .test { 
-            padding: 10px; 
-            margin: 10px 0; 
-            background: #222; 
-            border-radius: 5px; 
+        h1 { color: #0f0; }
+        .info { 
+            background: #333; 
+            padding: 15px; 
+            margin: 10px 0;
+            border-radius: 8px;
         }
-        .success { border-left: 4px solid #0f0; }
-        .error { border-left: 4px solid #f00; }
-        button { 
-            padding: 12px 20px; 
-            margin: 5px; 
-            font-size: 16px; 
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
             background: #0088cc;
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
-    <h1>🔍 DIAGNOSTIC MODE</h1>
-    <div id="results"></div>
+    <h1>✅ WEB APP IS WORKING!</h1>
     
-    <h2>Manual Tests:</h2>
-    <button onclick="testAPI()">Test API Connection</button>
-    <button onclick="testChannels()">Test Load Channels</button>
-    <button onclick="testOrders()">Test Load Orders</button>
+    <div class="info">
+        <strong>Telegram User:</strong> <span id="userName">Loading...</span>
+    </div>
+    
+    <div class="info">
+        <strong>User ID:</strong> <span id="userId">Loading...</span>
+    </div>
+    
+    <div class="info">
+        <strong>API URL:</strong> https://telegram-ads-marketplace-app.onrender.com
+    </div>
+    
+    <button onclick="testChannels()">🔍 Test Load Channels</button>
+    <button onclick="testOrders()">📦 Test Load Orders</button>
+    
+    <div id="results" style="margin-top: 20px;"></div>
     
     <script>
-        const log = (msg, isError = false) => {
+        // Initialize Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        
+        const userId = tg.initDataUnsafe?.user?.id || 0;
+        const userName = tg.initDataUnsafe?.user?.first_name || 'Unknown';
+        const API_URL = 'https://telegram-ads-marketplace-app.onrender.com';
+        
+        document.getElementById('userName').textContent = userName;
+        document.getElementById('userId').textContent = userId || 'NOT FOUND';
+        
+        function log(msg, color = '#0f0') {
             const div = document.createElement('div');
-            div.className = 'test ' + (isError ? 'error' : 'success');
+            div.style.color = color;
+            div.style.padding = '10px';
+            div.style.background = '#222';
+            div.style.margin = '5px 0';
+            div.style.borderRadius = '5px';
             div.textContent = msg;
             document.getElementById('results').appendChild(div);
-            console.log(msg);
-        };
-        
-        // Test 1: Telegram WebApp
-        try {
-            const tg = window.Telegram.WebApp;
-            tg.ready();
-            tg.expand();
-            log('✅ Telegram WebApp initialized');
-            log('✅ User ID: ' + (tg.initDataUnsafe?.user?.id || 'NOT FOUND'));
-        } catch (e) {
-            log('❌ Telegram WebApp error: ' + e.message, true);
-        }
-        
-        // Test 2: API URL
-        const API_URL = 'https://telegram-ads-marketplace-app.onrender.com';
-        log('✅ API URL: ' + API_URL);
-        
-        // Test 3: Fetch test
-        async function testAPI() {
-            log('🔄 Testing API connection...');
-            try {
-                const response = await fetch(API_URL + '/channels/');
-                log('✅ API Response Status: ' + response.status);
-                const data = await response.json();
-                log('✅ API Data: ' + JSON.stringify(data).substring(0, 100));
-            } catch (e) {
-                log('❌ API Error: ' + e.message, true);
-            }
         }
         
         async function testChannels() {
@@ -80,20 +78,18 @@
             try {
                 const response = await fetch(API_URL + '/channels/');
                 const channels = await response.json();
-                log('✅ Loaded ' + channels.length + ' channels');
-                channels.forEach(ch => {
-                    log('  - ' + ch.channel_title);
+                log('✅ SUCCESS! Loaded ' + channels.length + ' channels', '#0f0');
+                channels.slice(0, 3).forEach(ch => {
+                    log('  📢 ' + ch.channel_title, '#fff');
                 });
             } catch (e) {
-                log('❌ Channels error: ' + e.message, true);
+                log('❌ ERROR: ' + e.message, '#f00');
             }
         }
         
         async function testOrders() {
-            const tg = window.Telegram.WebApp;
-            const userId = tg.initDataUnsafe?.user?.id;
             if (!userId) {
-                log('❌ No user ID!', true);
+                log('❌ No user ID - open from Telegram!', '#f00');
                 return;
             }
             
@@ -101,16 +97,21 @@
             try {
                 const response = await fetch(API_URL + '/orders/user/' + userId);
                 const orders = await response.json();
-                log('✅ Loaded orders: ' + JSON.stringify(orders).substring(0, 200));
+                
+                if (orders.error) {
+                    log('✅ API works but no orders yet', '#ff0');
+                } else {
+                    log('✅ SUCCESS! Found ' + orders.length + ' orders', '#0f0');
+                }
             } catch (e) {
-                log('❌ Orders error: ' + e.message, true);
+                log('❌ ERROR: ' + e.message, '#f00');
             }
         }
         
-        // Auto-run basic tests
+        // Auto-test on load
         setTimeout(() => {
-            log('🔄 Running auto-tests...');
-            testAPI();
+            log('🚀 Auto-testing API connection...');
+            testChannels();
         }, 1000);
     </script>
 </body>
