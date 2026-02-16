@@ -278,6 +278,33 @@
         
         .step-active { background: rgba(255,159,10,0.1); }
         .step-complete { background: rgba(52,199,89,0.1); }
+        
+        .stat-card {
+            background: #242424;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #2c2c2e;
+            margin-bottom: 12px;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #34c759;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 13px;
+            color: #8e8e93;
+        }
+        
+        .earnings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
     </style>
 </head>
 <body>
@@ -309,6 +336,10 @@
                 <div class="action-card" onclick="showView('pendingView')">
                     <div class="action-icon">⏳</div>
                     <div class="action-title">Pending Orders</div>
+                </div>
+                <div class="action-card" onclick="showView('earningsView')">
+                    <div class="action-icon">💰</div>
+                    <div class="action-title">My Earnings</div>
                 </div>
             </div>
         </div>
@@ -364,6 +395,12 @@
             <h2 class="section-title">Review Order</h2>
             <div id="reviewOrderContent"></div>
         </div>
+
+        <!-- My Earnings View -->
+        <div id="earningsView" class="hidden">
+            <h2 class="section-title">My Earnings</h2>
+            <div id="earningsContainer"></div>
+        </div>
     </div>
 
     <div class="bottom-nav">
@@ -382,6 +419,10 @@
         <div class="nav-item" onclick="showView('myChannelsView')">
             <div class="nav-icon">📊</div>
             <div>Channels</div>
+        </div>
+        <div class="nav-item" onclick="showView('earningsView')">
+            <div class="nav-icon">💰</div>
+            <div>Earnings</div>
         </div>
     </div>
 
@@ -414,6 +455,8 @@
             if (viewId === 'myOrdersView') loadMyOrders();
             if (viewId === 'myChannelsView') loadMyChannels();
             if (viewId === 'pendingView') loadPendingOrders();
+            if (viewId === 'earningsView') loadEarnings();
+            if (viewId === 'earningsView') loadEarnings();
         }
 
         function goBack() {
@@ -439,7 +482,8 @@
                 submitCreativeView: 'Submit Creative',
                 myChannelsView: 'My Channels',
                 pendingView: 'Pending Orders',
-                reviewOrderView: 'Review Order'
+                reviewOrderView: 'Review Order',
+                earningsView: 'My Earnings'
             };
             document.getElementById('headerTitle').textContent = titles[viewId] || 'Marketplace';
         }
@@ -452,7 +496,8 @@
                 channelDetailsView: 1,
                 myOrdersView: 2,
                 orderDetailsView: 2,
-                myChannelsView: 3
+                myChannelsView: 3,
+                earningsView: 4
             };
             const index = navIndex[viewId];
             if (index !== undefined) {
@@ -1024,6 +1069,187 @@
                 tg.showAlert('Error rejecting');
                 btn.disabled = false;
                 btn.textContent = 'Reject';
+            }
+        }
+
+        // Load My Earnings
+        async function loadEarnings() {
+            if (!userId) {
+                document.getElementById('earningsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">💰</div><p>Open from Telegram</p></div>';
+                return;
+            }
+            
+            const container = document.getElementById('earningsContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading...</p></div>';
+            
+            try {
+                // Get user data
+                const userResponse = await fetch(`${API_URL}/users/${userId}`);
+                const userData = await userResponse.json();
+                
+                // Get user's channels
+                const channelsResponse = await fetch(`${API_URL}/channels/owner/${userId}`);
+                const channels = await channelsResponse.json();
+                
+                const totalEarned = userData.total_earned || 0;
+                const totalSpent = userData.total_spent || 0;
+                const channelCount = (channels && !channels.error) ? channels.length : 0;
+                
+                // Get completed orders count
+                const ordersResponse = await fetch(`${API_URL}/orders/user/${userId}`);
+                const orders = await ordersResponse.json();
+                const completedOrders = (orders && !orders.error) ? orders.filter(o => o.status === 'posted' || o.status === 'completed').length : 0;
+                
+                container.innerHTML = `
+                    <div class="channel-card" style="margin-bottom: 16px;">
+                        <div class="channel-body">
+                            <h3 style="margin-bottom: 20px; text-align: center;">💰 Earnings Overview</h3>
+                            
+                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 12px; text-align: center; margin-bottom: 20px;">
+                                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Earned</div>
+                                <div style="font-size: 36px; font-weight: 700;">$${totalEarned.toFixed(2)}</div>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px;">
+                                <div style="background: #242424; padding: 16px; border-radius: 12px; text-align: center;">
+                                    <div style="font-size: 24px; margin-bottom: 8px;">📊</div>
+                                    <div style="font-size: 20px; font-weight: 600; color: #34c759;">${channelCount}</div>
+                                    <div style="font-size: 12px; color: #8e8e93; margin-top: 4px;">My Channels</div>
+                                </div>
+                                
+                                <div style="background: #242424; padding: 16px; border-radius: 12px; text-align: center;">
+                                    <div style="font-size: 24px; margin-bottom: 8px;">✅</div>
+                                    <div style="font-size: 20px; font-weight: 600; color: #3390ec;">${completedOrders}</div>
+                                    <div style="font-size: 12px; color: #8e8e93; margin-top: 4px;">Completed</div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: #1a1a1a; padding: 16px; border-radius: 12px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                                    <span style="color: #8e8e93;">Total Spent</span>
+                                    <span style="font-weight: 600;">$${totalSpent.toFixed(2)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: #8e8e93;">Net Balance</span>
+                                    <span style="font-weight: 600; color: ${(totalEarned - totalSpent) >= 0 ? '#34c759' : '#ff453a'};">
+                                        $${(totalEarned - totalSpent).toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    ${channelCount > 0 && channels && !channels.error ? `
+                        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">Your Channels</h3>
+                        ${channels.map(ch => `
+                            <div class="channel-card" style="margin-bottom: 12px;">
+                                <div class="channel-body">
+                                    <div class="channel-title">${ch.channel_title}</div>
+                                    <div class="channel-stats">
+                                        <span>👥 ${ch.subscribers || 0}</span>
+                                        <span>${ch.status}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : ''}
+                `;
+            } catch (error) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error loading earnings</p></div>';
+            }
+        }
+
+        // Load Earnings
+        async function loadEarnings() {
+            if (!userId) {
+                document.getElementById('earningsContainer').innerHTML = '<div class="empty-state"><div class="empty-icon">💰</div><p>Open from Telegram</p></div>';
+                return;
+            }
+            
+            const container = document.getElementById('earningsContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading earnings...</p></div>';
+            
+            try {
+                // Get user data
+                const userResponse = await fetch(`${API_URL}/users/${userId}`);
+                const userData = await userResponse.json();
+                
+                // Get channels owned by user
+                const channelsResponse = await fetch(`${API_URL}/channels/owner/${userId}`);
+                const channels = await channelsResponse.json();
+                
+                // Get all orders for user's channels
+                let totalOrders = 0;
+                let completedOrders = 0;
+                let pendingOrders = 0;
+                
+                if (channels && !channels.error && channels.length > 0) {
+                    for (const channel of channels) {
+                        const ordersResponse = await fetch(`${API_URL}/orders/channel/${channel.id}`);
+                        const orders = await ordersResponse.json();
+                        
+                        if (orders && !orders.error) {
+                            totalOrders += orders.length;
+                            completedOrders += orders.filter(o => o.status === 'posted' || o.status === 'completed').length;
+                            pendingOrders += orders.filter(o => o.status === 'creative_submitted').length;
+                        }
+                    }
+                }
+                
+                const totalEarned = userData.total_earned || 0;
+                const totalChannels = channels && !channels.error ? channels.length : 0;
+                
+                container.innerHTML = `
+                    <div class="earnings-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">$${totalEarned.toFixed(2)}</div>
+                            <div class="stat-label">Total Earned</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${totalChannels}</div>
+                            <div class="stat-label">My Channels</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${completedOrders}</div>
+                            <div class="stat-label">Completed Orders</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${pendingOrders}</div>
+                            <div class="stat-label">Pending Review</div>
+                        </div>
+                    </div>
+                    
+                    <div class="channel-card">
+                        <div class="channel-body">
+                            <h3 style="margin-bottom: 16px;">💰 Earnings Overview</h3>
+                            <div style="margin: 12px 0; display: flex; justify-content: space-between; padding: 12px; background: #1a1a1a; border-radius: 8px;">
+                                <span>Total Orders:</span>
+                                <strong>${totalOrders}</strong>
+                            </div>
+                            <div style="margin: 12px 0; display: flex; justify-content: space-between; padding: 12px; background: #1a1a1a; border-radius: 8px;">
+                                <span>Completed:</span>
+                                <strong style="color: #34c759;">${completedOrders}</strong>
+                            </div>
+                            <div style="margin: 12px 0; display: flex; justify-content: space-between; padding: 12px; background: #1a1a1a; border-radius: 8px;">
+                                <span>Pending:</span>
+                                <strong style="color: #ff9f0a;">${pendingOrders}</strong>
+                            </div>
+                            <div style="margin: 12px 0; display: flex; justify-content: space-between; padding: 12px; background: rgba(52,199,89,0.1); border-radius: 8px; border: 1px solid #34c759;">
+                                <span style="font-weight: 600;">Total Earnings:</span>
+                                <strong style="color: #34c759; font-size: 18px;">$${totalEarned.toFixed(2)}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    ${totalChannels === 0 ? `
+                        <div class="empty-state">
+                            <div class="empty-icon">📢</div>
+                            <p>Add a channel to start earning!</p>
+                        </div>
+                    ` : ''}
+                `;
+            } catch (error) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error loading earnings</p></div>';
             }
         }
 
