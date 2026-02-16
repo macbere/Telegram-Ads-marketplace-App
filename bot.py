@@ -8,7 +8,6 @@ import asyncio
 import time
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
@@ -22,7 +21,7 @@ if not BOT_TOKEN:
     logger.error("❌ BOT_TOKEN not found")
     raise ValueError("BOT_TOKEN is required")
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 async def aggressive_cleanup():
